@@ -1,5 +1,7 @@
 # Gridlock
 
+> 🏆 **Finalist Prize — UWBHacks 2026**
+
 Gridlock is an interactive Seattle transit-demand simulator. A React/TypeScript map displays cached Seattle building geometry, transit build-out scenarios, animated trains, and a foot-traffic pressure heatmap streamed by a FastAPI backend over Server-Sent Events (SSE).
 
 The simulation is analytical rather than machine-learned at runtime: land-use populations generate trips, active transit stops absorb capacity, and the remaining trips are rendered as demand pressure.

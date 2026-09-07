@@ -280,6 +280,28 @@
   line-height: 0.98;
 }
 
+.loading-award {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border: 1px solid rgba(246, 200, 95, 0.85);
+  border-radius: 999px;
+  background: rgba(255, 246, 216, 0.92);
+  color: #7a5a12;
+  font-family: 'Space Mono', monospace;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.loading-award-icon {
+  font-size: 0.85rem;
+  line-height: 1;
+}
+
 .loading-status {
   min-height: 20px;
   color: rgba(24, 50, 75, 0.72);

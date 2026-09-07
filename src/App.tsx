@@ -1490,6 +1490,12 @@ function App() {
         <div className="app-loading-panel">
           <div className="loading-kicker">Gridlock</div>
           <div className="loading-title">Seattle Transit Sim</div>
+          <div className="loading-award">
+            <span className="loading-award-icon" aria-hidden="true">
+              &#127942;
+            </span>
+            Finalist Prize &middot; UWBHacks 2026
+          </div>
           <div className="loading-status">{loadingStatus}</div>
           {streamUnreachable ? (
             <>
