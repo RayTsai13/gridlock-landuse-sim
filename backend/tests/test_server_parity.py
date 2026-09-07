@@ -50,6 +50,8 @@ def _reset(module) -> None:
     else:
         module.STATE = module.MockState()
         module.PLAYBACK = module.MockPlaybackController()
+        module._SHUTDOWN = None
+        module.FRAME_INTERVAL_S = 0.02
 
 
 def _bounds(impl) -> dict[str, float]:
@@ -97,7 +99,7 @@ async def _drive(impl, request: FakeRequest, n: int, timeout: float = 5.0) -> li
             buffer += chunk
             while "\n\n" in buffer:
                 block, buffer = buffer.split("\n\n", 1)
-                if block.strip():
+                if block.strip() and not block.startswith(":"):
                     events.append(_parse_sse_event(block))
                     if len(events) >= n:
                         request.disconnect()
@@ -152,8 +154,8 @@ async def test_streams_do_not_advance_the_clock(impl) -> None:
     before = playback.current_tick
 
     await asyncio.gather(
-        _drive(impl, FakeRequest(), n=6),
-        _drive(impl, FakeRequest(), n=6),
+        _drive(impl, FakeRequest(), n=4),
+        _drive(impl, FakeRequest(), n=4),
     )
 
     assert playback.current_tick == before
@@ -359,3 +361,103 @@ def test_people_burst_of_twelve_is_handled(client, impl) -> None:
     }
     assert len(ids) == 12
     assert len(client.get("/api/people").json()["people"]) == 12
+
+
+def test_batch_is_atomic_and_notifies_once(client, impl):
+    point = _inbounds_point(impl)
+    before = impl.STATE.version
+    response = client.post('/api/people/batch', json={
+        'people': [{**point, 'count': 416}] * 11 + [{**point, 'count': 424}],
+    })
+    assert response.status_code == 201
+    assert sum(p['count'] for p in response.json()['people']) == 5000
+    assert len(impl.STATE.people) == 12
+    assert impl.STATE.version == before + 1
+    before = impl.STATE.version
+    response = client.post('/api/people/batch', json={
+        'people': [point, {**point, 'lat': 90}],
+    })
+    assert response.status_code == 400
+    assert len(impl.STATE.people) == 12
+    assert impl.STATE.version == before
+
+
+@pytest.mark.parametrize('people', [[], [{}] * 65, [None], [{'lat': 47.6, 'lon': -122.33, 'radius_m': 10001}]])
+def test_batch_rejects_invalid_workloads(client, people):
+    assert client.post('/api/people/batch', json={'people': people}).status_code == 400
+
+
+def test_network_limits(client):
+    assert client.post('/api/scenario', json={
+        'scenario_id': 'line-1', 'stops': [{}] * 257,
+    }).status_code == 400
+
+
+def test_paused_tick_reuses_frame_and_encoding(impl):
+    playback = impl.STATE.playback if impl is real_server else impl.PLAYBACK
+    playback.set_playing(False)
+    frame = impl.STATE.current_frame()
+    encoded = impl.STATE.encoded_frame()
+    impl.STATE.tick()
+    assert impl.STATE.current_frame() is frame
+    assert impl.STATE.encoded_frame() is encoded
+    impl.STATE.add_person(**_inbounds_point(impl), count=100)
+    assert impl.STATE.current_frame() is not frame
+    assert impl.STATE.encoded_frame() != encoded
+
+
+def test_frame_encoding_is_shared_by_many_readers(impl, monkeypatch):
+    dumps = impl.json.dumps
+    encoded_count = 0
+
+    def counted(*args, **kwargs):
+        nonlocal encoded_count
+        encoded_count += 1
+        return dumps(*args, **kwargs)
+
+    monkeypatch.setattr(impl.json, 'dumps', counted)
+    for _ in range(100):
+        impl.STATE.encoded_frame()
+    assert encoded_count == 1
+    impl.STATE.tick()
+    for _ in range(100):
+        impl.STATE.encoded_frame()
+    assert encoded_count == 2
+
+
+def test_crowd_limit_is_atomic(client, impl):
+    from backend.protocol import MAX_PEOPLE
+    # Fill via the state API to avoid hundreds of irrelevant HTTP round trips.
+    point = _inbounds_point(impl)
+    impl.STATE.add_people_batch([{**point, 'count': 1}] * (MAX_PEOPLE - 1))
+    assert client.post('/api/people/batch', json={'people': [point, point]}).status_code == 400
+    assert len(impl.STATE.people) == MAX_PEOPLE - 1
+    assert client.post('/api/people', json=point).status_code == 201
+    assert client.post('/api/people', json=point).status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_handshake_disconnect_releases_subscriber(impl):
+    stream = impl._stream(FakeRequest())
+    await anext(stream)
+    assert impl.STATE.subscriber_count == 1
+    await stream.aclose()
+    assert impl.STATE.subscriber_count == 0
+
+
+@pytest.mark.asyncio
+async def test_idle_stream_heartbeats_then_delivers_mutation(impl):
+    stream = impl._stream(FakeRequest())
+    try:
+        for _ in range(4):
+            await anext(stream)
+        cached = impl.STATE.current_frame()
+        assert await asyncio.wait_for(anext(stream), 1) == ': heartbeat\n\n'
+        assert impl.STATE.current_frame() is cached
+        impl.STATE.add_person(**_inbounds_point(impl), count=100)
+        await impl.STATE.notify_change()
+        frame = _parse_sse_event(await anext(stream))
+        assert frame['event'] == 'frame'
+        assert frame['data'] == impl.STATE.current_frame()
+    finally:
+        await stream.aclose()

@@ -15,6 +15,18 @@ export type PeopleOptions = {
   radius_m?: number;
 };
 
+export type PeopleDrop = PeopleOptions & { lat: number; lon: number; count: number };
+
+export async function postPeopleBatch(people: PeopleDrop[]): Promise<PlacedPerson[]> {
+  const res = await fetch(`${BASE_URL}/people/batch`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ people }),
+  });
+  if (!res.ok) throw new Error(`POST /api/people/batch failed: ${res.status}`);
+  return (await res.json()).people;
+}
+
 export type ScenarioStop = {
   id: string;
   name: string;

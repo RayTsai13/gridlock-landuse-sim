@@ -12,6 +12,8 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
+from backend.protocol import MAX_PEOPLE, parse_person, parse_batch
+
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -47,13 +49,19 @@ async def _frame_ticker() -> None:
     nobody is connected the clock holds rather than composing frames for an
     empty room.
     """
+    loop = asyncio.get_running_loop()
+    deadline = loop.time()
     while True:
-        await asyncio.sleep(FRAME_INTERVAL_S)
+        deadline += FRAME_INTERVAL_S
+        await asyncio.sleep(max(0, deadline - loop.time()))
+        # Skip missed deadlines instead of bursting ticks after a long stall.
+        deadline = max(deadline, loop.time())
         try:
             if STATE.subscriber_count == 0:
                 continue
-            STATE.tick()
-            await STATE.notify_change()
+            if STATE.playback.is_playing:
+                STATE.tick()
+                await STATE.notify_change()
         except asyncio.CancelledError:
             raise
         except Exception:  # pragma: no cover - defensive; keep the ticker alive
@@ -90,7 +98,7 @@ STATE = State(
 
 
 def _sse(event_id: int, event: str, data: dict[str, Any]) -> str:
-    return f"id: {event_id}\nevent: {event}\ndata: {json.dumps(data)}\n\n"
+    return f"id: {event_id}\nevent: {event}\ndata: {json.dumps(data, separators=(',', ':'))}\n\n"
 
 
 async def _stream(request: Request):
@@ -135,13 +143,16 @@ async def _stream(request: Request):
                 event_id += 1
                 last_playback_state = playback_state
 
-            yield _sse(event_id, "frame", STATE.current_frame())
+            yield f"id: {event_id}\nevent: frame\ndata: {STATE.encoded_frame()}\n\n"
             event_id += 1
 
-            last_version = await STATE.wait_for_change(
-                last_version,
-                timeout=FRAME_INTERVAL_S,
-            )
+            while STATE.version == last_version:
+                await STATE.wait_for_change(last_version, timeout=FRAME_INTERVAL_S)
+                if STATE.version == last_version:
+                    if await request.is_disconnected():
+                        return
+                    yield ": heartbeat\n\n"
+            last_version = STATE.version
     except asyncio.CancelledError:
         raise
     except Exception:
@@ -242,40 +253,29 @@ async def seek_playback(payload: dict[str, Any]):
 
 
 @app.post("/api/people", status_code=201)
-async def post_people(payload: dict[str, Any]):
+async def post_people(payload: dict):
     try:
-        lat = float(payload["lat"])
-        lon = float(payload["lon"])
-    except (KeyError, TypeError, ValueError) as exc:
-        raise HTTPException(
-            status_code=400,
-            detail="lat and lon are required and must be numeric",
-        ) from exc
-    try:
-        count = int(payload.get("count", 1))
-    except (TypeError, ValueError) as exc:
-        raise HTTPException(status_code=400, detail="count must be an integer") from exc
-
-    optional_keys = {"duration_minutes", "radius_m", "kind", "decay_m"}
-    include_tuning = any(key in payload for key in optional_keys)
-    try:
-        person = STATE.add_person(
-            lat=lat,
-            lon=lon,
-            count=count,
-            kind=str(payload["kind"]) if "kind" in payload else None,
-            duration_minutes=(
-                int(payload["duration_minutes"])
-                if "duration_minutes" in payload
-                else None
-            ),
-            radius_m=float(payload["radius_m"]) if "radius_m" in payload else None,
-            decay_m=float(payload["decay_m"]) if "decay_m" in payload else None,
-        )
-    except (TypeError, ValueError) as exc:
+        if len(STATE.people) >= MAX_PEOPLE:
+            raise ValueError(f"at most {MAX_PEOPLE} active crowds are supported")
+        entry = parse_person(payload, STATE.grid.bounds.to_dict())
+        person = STATE.add_person(**entry)
+    except (KeyError, TypeError, ValueError, OverflowError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     await STATE.notify_change()
-    return person.to_public_dict(include_tuning=include_tuning)
+    return person.to_public_dict(include_tuning=any(
+        key in payload for key in ("kind", "duration_minutes", "radius_m", "decay_m")
+    ))
+
+
+@app.post("/api/people/batch", status_code=201)
+async def post_people_batch(payload: dict):
+    try:
+        entries = parse_batch(payload, STATE.grid.bounds.to_dict(), len(STATE.people))
+        people = STATE.add_people_batch(entries)
+    except (KeyError, TypeError, ValueError, OverflowError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await STATE.notify_change()
+    return {"people": [person.to_public_dict(include_tuning=True) for person in people]}
 
 
 @app.delete("/api/people/{person_id}")

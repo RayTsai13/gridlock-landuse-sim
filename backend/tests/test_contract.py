@@ -131,7 +131,7 @@ async def drive_stream(
             buffer += chunk
             while "\n\n" in buffer:
                 block, buffer = buffer.split("\n\n", 1)
-                if block.strip():
+                if block.strip() and not block.startswith(":"):
                     events.append(_parse_sse_event(block))
                     if len(events) >= n:
                         request.disconnect()
@@ -412,7 +412,7 @@ async def test_scenario_post_emits_new_event_on_open_stream() -> None:
             buffer += chunk
             while "\n\n" in buffer:
                 block, buffer = buffer.split("\n\n", 1)
-                if block.strip():
+                if block.strip() and not block.startswith(":"):
                     events.append(_parse_sse_event(block))
                     new_seen = any(
                         e["event"] == "scenario"
@@ -1053,8 +1053,8 @@ async def test_open_streams_never_advance_the_simulation_clock() -> None:
     tick_before = server.STATE.playback.current_tick
 
     await asyncio.gather(
-        drive_stream(FakeRequest(), n=6),
-        drive_stream(FakeRequest(), n=6),
+        drive_stream(FakeRequest(), n=4),
+        drive_stream(FakeRequest(), n=4),
     )
 
     assert server.STATE.playback.current_tick == tick_before

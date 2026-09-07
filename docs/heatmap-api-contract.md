@@ -162,6 +162,17 @@ not move `sim_time`**: the clock is stored absolutely, not derived from `current
 sim_step_seconds`. `current_tick` is a monotonic count of frames played, with no fixed
 relationship to `sim_time`.
 
+### Idle streams and encoding
+
+After the initial frame, a stream emits frames only when the shared state changes.
+While paused and unchanged, both servers send SSE comment heartbeats
+(`: heartbeat` followed by a blank line) at the configured frame interval. Comments
+have no event ID and browsers ignore them; clients must not treat absence of new
+visual frames while paused as a disconnect. Pausing stops composition as well as
+clock advance. A mutation still wakes the stream immediately. A running ticker
+uses monotonic deadlines and does not replay a backlog of missed ticks after a stall.
+Frame JSON is encoded once per shared frame; event IDs remain per connection.
+
 ### `clear`
 
 Optional. Resets the frontend to an empty grid. Neither server emits it.
@@ -221,8 +232,20 @@ returns the same shape.
 optional tuning fields.
 
 Response is `{"id", "lat", "lon", "count"}`, plus the tuning fields if any were
-sent. The UI drops a crowd as **12 concurrent POSTs**, so the endpoint must
-handle a burst.
+sent. Existing single-person requests remain supported.
+
+`POST /api/people/batch` → **201** accepts `{"people": [<person payload>, ...]}`
+and returns `{"people": [<created person with tuning fields>, ...]}`. The UI sends
+all 12 scatter clusters in one batch. Both servers validate every entry before
+publishing any, invalidate once, and notify once. An invalid entry rejects the
+whole batch with 400 and leaves existing people unchanged.
+
+Workload limits (400 on violation): 1–64 entries per batch, at most 512 active
+crowds, count 1–1,000,000 per entry, positive duration at most 10,080 minutes,
+and positive radius/decay at most 10,000 m. Coordinates must be in bounds.
+Custom network lists are limited to 256 stops and 64 lines; each line may have
+at most 256 stop IDs and 10,000 path coordinates. Malformed optional network
+data retains the existing fallback behavior within these size limits.
 
 `DELETE /api/people/{id}` → 204, or 404 for an unknown id.
 `DELETE /api/people` → 204, clears all.
