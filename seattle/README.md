@@ -12,7 +12,12 @@ Run Seattle scripts from the repository root. The building-height and region scr
 python3 seattle/scripts/extract_seattle_building_heights.py
 python3 seattle/scripts/join_seattle_building_heights.py
 python3 seattle/scripts/export_seattle_building_regions.py
+python3 seattle/scripts/build_heatmap_built_mass.py
 ```
+
+`build_heatmap_built_mass.py` is offline-only (no network) and reads
+`seattle_building_height_join.csv`, so re-run it whenever that join is
+regenerated. Nothing else depends on it changing.
 
 These commands make network requests and overwrite checked-in generated artifacts after successful fetch/processing. Review file sizes, generated summaries, and the git diff before committing regenerated data. Each script supports `--help` and optional limits useful for smaller validation runs.
 
@@ -32,6 +37,12 @@ These commands make network requests and overwrite checked-in generated artifact
     - Exports cached Seattle neighborhood GeoJSON chunks for the map.
   - `fetch_seattle_buildings.py`
     - Legacy OSM footprint fetcher for quick local extracts.
+  - `build_heatmap_built_mass.py`
+    - Bakes the per-subcell built-mass field the heatmap is shaped by: gross
+      floor area (`footprint_area * storeys`) binned at 4x the heatmap grid
+      (~125 m) and normalized against the 99th percentile of non-empty bins.
+      This is what keeps demand off Elliott Bay and out of Discovery Park; see
+      `backend/landuse.py`. Writes both destinations in one run.
 
 - `data/raw/`
   - Seattle-only raw inputs that were moved out of `data_processing`.
@@ -41,8 +52,11 @@ These commands make network requests and overwrite checked-in generated artifact
     - `seattle_scene_heights.csv`
     - `seattle_building_height_join.csv`
     - `seattle_heatmap_features.csv`
-    - `seattle_heatmap_grid.geojson` — **the only file the backend reads at
-      runtime**, and only for grid bounds / rows / cols
+    - `seattle_heatmap_grid.geojson` — read by the backend at runtime, and
+      only for grid bounds / rows / cols
+    - `seattle_heatmap_built_mass.json` — the other file the backend reads at
+      runtime (`HEATMAP_BUILT_MASS`). Absent, the simulation falls back to the
+      hand-drawn coastline in `landuse.is_probable_water`.
     - related summary files
 
 ## Frontend Assets
@@ -62,6 +76,10 @@ Other related frontend assets:
 - `public/seattle/seattle-building-heights.json`
   - supporting/legacy height lookup; current frontend mainly uses pre-joined region GeoJSON
 - `public/seattle/seattle-building-regions-summary.json`
+- `public/seattle/seattle-built-mass.json`
+  - byte-identical copy of `data/processed/seattle_heatmap_built_mass.json`,
+    fetched by `src/heatmap/mask.ts`. Both are written by the same run of
+    `build_heatmap_built_mass.py` so they cannot drift apart.
 
 ## Typical Flow
 
@@ -78,7 +96,12 @@ The concrete root-level commands are:
 python3 seattle/scripts/extract_seattle_building_heights.py
 python3 seattle/scripts/join_seattle_building_heights.py
 python3 seattle/scripts/export_seattle_building_regions.py
+python3 seattle/scripts/build_heatmap_built_mass.py
 ```
+
+`build_heatmap_built_mass.py` is offline-only (no network) and reads
+`seattle_building_height_join.csv`, so re-run it whenever that join is
+regenerated. Nothing else depends on it changing.
 
 The heatmap dataset builder moved to `data_processing/`
 (`src/pipelines/seattle/build_heatmap_dataset.py`). The model-training stage

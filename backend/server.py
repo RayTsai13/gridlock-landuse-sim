@@ -17,7 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
 from .grid import load_grid
-from .state import State
+from .state import DEFAULT_BUILT_MASS_PATH, State
 
 
 logger = logging.getLogger(__name__)
@@ -31,6 +31,9 @@ GEOJSON_PATH = Path(
         "HEATMAP_GEOJSON",
         str(_REPO_ROOT / "seattle" / "data" / "processed" / "seattle_heatmap_grid.geojson"),
     )
+)
+BUILT_MASS_PATH = Path(
+    os.environ.get("HEATMAP_BUILT_MASS", str(DEFAULT_BUILT_MASS_PATH))
 )
 FRAME_INTERVAL_S = float(os.environ.get("HEATMAP_FRAME_INTERVAL", "1.0"))
 SIM_STEP_SECONDS = int(os.environ.get("HEATMAP_SIM_STEP_SECONDS", "1800"))
@@ -82,6 +85,7 @@ STATE = State(
     GRID,
     frame_interval_seconds=FRAME_INTERVAL_S,
     sim_step_seconds=SIM_STEP_SECONDS,
+    built_mass_path=BUILT_MASS_PATH,
 )
 
 

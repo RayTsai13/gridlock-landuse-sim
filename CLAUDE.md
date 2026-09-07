@@ -86,7 +86,10 @@ in trips/hour; whatever is left over is streamed as density over SSE. Key module
 population, totals conserved), `demand.py` (trips-per-person-per-hour tables), `network.py` (stops/lines +
 `ServiceCapacity` allocation), `overlays.py` (crowd drops, also in trips), `composer.py` (unmet trips → density on a
 fixed absolute scale), `grid.py`, `state.py`, `sim_time.py`, `geo.py`. There is no ML at runtime — the GeoJSON supplies
-grid geometry only. Notable endpoints:
+grid geometry only. Each cell is additionally weighted by its **built mass** (gross floor area, baked offline by
+`seattle/scripts/build_heatmap_built_mass.py` into `seattle_heatmap_built_mass.json`); cells with no buildings are
+uninhabitable, which is what keeps demand off Elliott Bay and Lake Union. `State.habitability` is computed once and
+shared by land use, overlays, walksheds and the composer. Notable endpoints:
 `GET /api/heatmap/stream` (SSE), `GET /healthz`, `POST /api/scenario`, `GET|POST /api/playback`,
 `POST /api/playback/seek`, and `GET|POST|DELETE /api/people`.
 
@@ -119,10 +122,16 @@ the real backend. Use it to animate the frontend without real data.
   (default `seattle/data/processed/seattle_heatmap_grid.geojson`).
 - `HEATMAP_FRAME_INTERVAL` — seconds between frame ticks (default `1.0`).
 - `HEATMAP_SIM_STEP_SECONDS` — sim-clock advance per frame (default `1800`).
+- `HEATMAP_BUILT_MASS` — path to the built-mass field (default
+  `seattle/data/processed/seattle_heatmap_built_mass.json`). Missing is survivable: land use falls back to the coarse
+  hand-drawn coastline in `landuse.is_probable_water`.
 
 Simulation tuning lives in code, not env vars: `STOP_CAPACITY_TRIPS_PER_HOUR` / `WALK_RADIUS_M` (`network.py`),
-`MAX_UNMET_TRIPS_PER_CELL_HOUR` / `DENSITY_GAMMA` (`composer.py`), the district table (`landuse.py`), and the trip
-rate tables (`demand.py`).
+`MAX_UNMET_TRIPS_PER_CELL_HOUR` / `DENSITY_GAMMA` / `DISPLAY_THRESHOLD` (`composer.py`), the district table plus
+`BUILT_MASS_EXPONENT` / `MIN_CELL_BUILT_MASS` (`landuse.py`), and the trip rate tables (`demand.py`). On the frontend the
+matching knobs are `HEATMAP_SUBDIVISIONS` / `MIN_RENDER_DENSITY` / `BUILT_MASS_SHAPING` (`src/heatmap/grid.ts`) and the
+circle geometry in `src/heatmap/layer.ts`. `MAX_UNMET_TRIPS_PER_CELL_HOUR` is calibrated against the built-mass field --
+if that changes shape, the scale has to move with it or downtown pins at 1.0 and crowd drops stop registering.
 
 `HEATMAP_GEOJSON` defaults to a path resolved against the repository root, so the server no
 longer depends on the working directory.

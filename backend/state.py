@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from typing import Any
 
 from .composer import FrameComposer
 from .demand import DemandField
 from .grid import Grid
-from .landuse import build_land_use, cell_centers
+from .landuse import build_land_use, cell_centers, cell_habitability, load_built_mass
 from .network import (
     DEFAULT_SCENARIO_ID,
     VALID_SCENARIO_IDS,
@@ -19,6 +20,18 @@ from .network import (
 )
 from .overlays import CrowdOverlay, LiveOverlayManager
 from .sim_time import PlaybackController
+
+
+# Anchored to the repository root, not the working directory, so tests and the
+# server resolve it identically. Absent is fine: land use falls back to the
+# hand-drawn coastline in ``landuse.is_probable_water``.
+DEFAULT_BUILT_MASS_PATH = (
+    Path(__file__).resolve().parent.parent
+    / "seattle"
+    / "data"
+    / "processed"
+    / "seattle_heatmap_built_mass.json"
+)
 
 
 class State:
@@ -36,20 +49,33 @@ class State:
         *,
         frame_interval_seconds: float = 1.0,
         sim_step_seconds: int = 1800,
+        built_mass_path: str | Path | None = DEFAULT_BUILT_MASS_PATH,
     ) -> None:
         self.grid = grid
         self.centers = cell_centers(grid)
-        self.land_use = build_land_use(self.centers)
+        self.built_mass = (
+            None if built_mass_path is None else load_built_mass(built_mass_path, grid)
+        )
+        # Computed once and shared by every consumer, so land use, crowds,
+        # walksheds and frame composition cannot disagree about where the city
+        # is -- the bug that let a red blob sit on Elliott Bay.
+        self.habitability = cell_habitability(self.centers, self.built_mass)
+        self.land_use = build_land_use(self.centers, built_mass=self.built_mass)
         self.demand_field = DemandField(self.land_use)
-        self.composer = FrameComposer(cols=grid.cols)
+        self.composer = FrameComposer(cols=grid.cols, habitability=self.habitability)
         self.playback = PlaybackController(
             frame_interval_seconds=frame_interval_seconds,
             sim_step_seconds=sim_step_seconds,
         )
         self.scenario_id: str = DEFAULT_SCENARIO_ID
         self.active_network: ActiveNetwork = default_network_for_scenario(self.scenario_id)
-        self.service = ServiceCapacity(grid, self.active_network, centers=self.centers)
-        self.overlays = LiveOverlayManager(self.centers)
+        self.service = ServiceCapacity(
+            grid,
+            self.active_network,
+            centers=self.centers,
+            habitability=self.habitability,
+        )
+        self.overlays = LiveOverlayManager(self.centers, self.habitability)
         self.people = self.overlays.people
         self.scenario_revision: int = 0
         self._version: int = 0
@@ -124,6 +150,7 @@ class State:
             self.grid,
             self.active_network,
             centers=self.centers,
+            habitability=self.habitability,
         )
         self.scenario_revision += 1
         self._state_counter += 1

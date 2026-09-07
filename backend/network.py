@@ -260,6 +260,7 @@ class ServiceCapacity:
         network: ActiveNetwork,
         *,
         centers: list[CellCenter] | None = None,
+        habitability: list[float] | None = None,
     ) -> None:
         self.grid = grid
         self.network = network
@@ -281,6 +282,7 @@ class ServiceCapacity:
                 stop.lat,
                 stop.lon,
                 WALK_RADIUS_M,
+                habitability,
             )
 
     @property
@@ -317,11 +319,18 @@ def _cells_within(
     lat: float,
     lon: float,
     radius_m: float,
+    habitability: list[float] | None = None,
 ) -> tuple[int, ...]:
     """Indices of cells whose center is within ``radius_m`` of a point.
 
     A degree-space bounding box rejects the overwhelming majority of cells
     before the (comparatively expensive) haversine runs.
+
+    Uninhabitable cells are dropped as well. That is a trim, not a fix:
+    ``allocate`` already ignores them because their unserved demand is zero and
+    so contributes nothing to the denominator. It just keeps a waterfront
+    station's walkshed from carrying half a bay's worth of dead indices through
+    the per-stop loop on every frame.
     """
     lat_span = radius_m / _METERS_PER_DEGREE_LAT
     cos_lat = max(0.01, math.cos(math.radians(lat)))
@@ -334,6 +343,7 @@ def _cells_within(
         for idx, center in enumerate(centers)
         if min_lat <= center.lat <= max_lat
         and min_lon <= center.lon <= max_lon
+        and (habitability is None or habitability[idx] > 0.0)
         and haversine_m(center.lat, center.lon, lat, lon) <= radius_m
     )
 

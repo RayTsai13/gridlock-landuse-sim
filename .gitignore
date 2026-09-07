@@ -26,7 +26,13 @@ data_processing/curr_data/processed/
 data_processing/gtfs/
 data_processing/gtfs_stations/
 seattle/data/raw/
-seattle/data/processed/
+# Trailing /* rather than / so the negation below can take effect: git cannot
+# re-include a file whose parent *directory* is excluded.
+seattle/data/processed/*
+# ...except the two artifacts the backend actually reads at runtime, which
+# backend.Dockerfile copies into the image.
+!seattle/data/processed/seattle_heatmap_grid.geojson
+!seattle/data/processed/seattle_heatmap_built_mass.json
 
 # Re-creatable frontend map assets exported by Seattle data scripts
 public/seattle/seattle-buildings*.geojson

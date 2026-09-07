@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FeatureCollection, Point } from 'geojson';
 import { emptyGrid, frameToGeoJSON } from './grid.ts';
 import type { GridConfig, Frame } from './grid.ts';
+import type { BuiltMass } from './mask.ts';
 import {
   deleteAllPeople,
   deletePerson,
@@ -34,6 +35,11 @@ export type HeatmapOptions = {
    * the layer is hidden; the raw frame is retained so re-enabling is instant.
    */
   renderGeometry?: boolean;
+  /**
+   * Built-mass field used to shape each cell's samples onto the blocks that
+   * actually hold buildings. Rendering is unshaped while this is null.
+   */
+  builtMass?: BuiltMass | null;
 };
 
 export type HeatmapApi = {
@@ -71,7 +77,7 @@ export type HeatmapDiagnostics = {
 };
 
 export function useHeatmap(options: HeatmapOptions = {}): HeatmapApi {
-  const { renderGeometry = true } = options;
+  const { renderGeometry = true, builtMass = null } = options;
 
   const [geojson, setGeojson] = useState<FeatureCollection<Point>>(emptyGrid());
   const [scenarioId, setScenarioId] = useState<string | null>(null);
@@ -98,12 +104,17 @@ export function useHeatmap(options: HeatmapOptions = {}): HeatmapApi {
   // without waiting for the next tick.
   const latestFrameRef = useRef<Frame | null>(null);
   const renderGeometryRef = useRef(renderGeometry);
+  const builtMassRef = useRef(builtMass);
   const [retryToken, setRetryToken] = useState(0);
 
-  // The SSE listeners are registered once and must see the current value.
+  // The SSE listeners are registered once and must see the current values.
   useEffect(() => {
     renderGeometryRef.current = renderGeometry;
   }, [renderGeometry]);
+
+  useEffect(() => {
+    builtMassRef.current = builtMass;
+  }, [builtMass]);
 
   useEffect(() => {
     const source = new EventSource(STREAM_URL);
@@ -193,7 +204,11 @@ export function useHeatmap(options: HeatmapOptions = {}): HeatmapApi {
 
       let featureCount = 0;
       if (renderGeometryRef.current) {
-        const nextGeojson = frameToGeoJSON(frame.cells, configRef.current);
+        const nextGeojson = frameToGeoJSON(
+          frame.cells,
+          configRef.current,
+          builtMassRef.current,
+        );
         featureCount = nextGeojson.features.length;
         setGeojson(nextGeojson);
       }
@@ -237,20 +252,21 @@ export function useHeatmap(options: HeatmapOptions = {}): HeatmapApi {
     };
   }, [retryToken]);
 
-  // Re-showing the heatmap converts the frame we already have, so the layer
-  // does not stay empty until the next tick arrives.
+  // Re-showing the heatmap -- or finishing the built-mass fetch -- converts the
+  // frame we already have, so the layer does not stay empty or unshaped until
+  // the next tick arrives.
   useEffect(() => {
     if (!renderGeometry) return;
     const frame = latestFrameRef.current;
     const config = configRef.current;
     if (!frame || !config) return;
-    const nextGeojson = frameToGeoJSON(frame.cells, config);
+    const nextGeojson = frameToGeoJSON(frame.cells, config, builtMass);
     setGeojson(nextGeojson);
     setDiagnostics((current) => ({
       ...current,
       featureCount: nextGeojson.features.length,
     }));
-  }, [renderGeometry]);
+  }, [renderGeometry, builtMass]);
 
   const retryConnection = useCallback(() => {
     consecutiveErrorsRef.current = 0;
@@ -284,7 +300,7 @@ export function useHeatmap(options: HeatmapOptions = {}): HeatmapApi {
         }
         latestFrameRef.current = response.frame;
         const nextGeojson = renderGeometryRef.current
-          ? frameToGeoJSON(response.frame.cells, configRef.current)
+          ? frameToGeoJSON(response.frame.cells, configRef.current, builtMassRef.current)
           : null;
         setScenarioId(response.scenario_id);
         if (nextGeojson) setGeojson(nextGeojson);

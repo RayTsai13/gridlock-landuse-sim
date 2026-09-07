@@ -18,6 +18,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import "./App.css";
 import { useHeatmap } from "./heatmap/stream.ts";
 import { HEATMAP_LAYER_ID, heatmapLayer } from "./heatmap/layer.ts";
+import { useBuiltMass } from "./heatmap/mask.ts";
 import { DEPLOY_STEPS, stopsToGeoJSON, linesToGeoJSON } from "./stops/data.ts";
 import type { TransitStop, TransitLine } from "./stops/data.ts";
 import {
@@ -248,6 +249,9 @@ const buildingFillLayer: LayerProps = {
 };
 
 const BASEMAP_WATER_COLOR = "#a9d8f3";
+// Carto Positron serves its vector tiles from a source named "carto"; water
+// lives on the "water" source-layer.
+const HEATMAP_WATER_CLIP_LAYER_ID = "heatmap-water-clip";
 const BASEMAP_WATER_SHADOW_COLOR = "#8fc5e4";
 const BASEMAP_WATERWAY_COLOR = "#87c7ea";
 const BASEMAP_GREENERY_COLOR = "#cfe7bf";
@@ -393,6 +397,7 @@ function formatDemandNumber(value: number) {
 
 function App() {
   const [isHeatmapVisible, setIsHeatmapVisible] = useState(false);
+  const builtMass = useBuiltMass();
   const {
     geojson: heatmapData,
     setScenario,
@@ -402,7 +407,7 @@ function App() {
     addPeople,
     diagnostics: heatmapDiagnostics,
     retryConnection,
-  } = useHeatmap({ renderGeometry: isHeatmapVisible });
+  } = useHeatmap({ renderGeometry: isHeatmapVisible, builtMass });
   const showHeatmapDebug = useMemo(
     () => new URLSearchParams(window.location.search).has("debugHeatmap"),
     [],
@@ -1230,9 +1235,25 @@ function App() {
         />
 
         {isHeatmapVisible && (
-          <Source id="heatmap-source" type="geojson" data={heatmapData}>
-            <Layer {...heatmapLayer} />
-          </Source>
+          <>
+            {/* The basemap's own water polygons, redrawn above the heatmap so
+                the shoreline clips it at full tile resolution. Painted the same
+                colour applyBasemapPalette gives the real water layer, so it is
+                invisible except where it erases heat that has drifted onto
+                Elliott Bay, Lake Union, or the Ship Canal. The heatmap targets
+                this layer by id, so the result does not depend on mount order. */}
+            <Layer
+              id={HEATMAP_WATER_CLIP_LAYER_ID}
+              type="fill"
+              source="carto"
+              source-layer="water"
+              beforeId="transit-line-casing"
+              paint={{ "fill-color": BASEMAP_WATER_COLOR }}
+            />
+            <Source id="heatmap-source" type="geojson" data={heatmapData}>
+              <Layer {...heatmapLayer} beforeId={HEATMAP_WATER_CLIP_LAYER_ID} />
+            </Source>
+          </>
         )}
 
         <Source id="transit-lines" type="geojson" data={linesGeoJSON}>

@@ -69,8 +69,16 @@ class CrowdOverlay:
 
 
 class LiveOverlayManager:
-    def __init__(self, centers: list[CellCenter]) -> None:
+    def __init__(
+        self,
+        centers: list[CellCenter],
+        habitability: list[float] | None = None,
+    ) -> None:
         self.centers = centers
+        # Same per-cell "can anyone be here" multiplier land use uses, so a
+        # crowd dropped on the waterfront spreads onto the piers rather than
+        # out over Elliott Bay.
+        self.habitability = habitability
         self.people: dict[str, CrowdOverlay] = {}
 
     def add(
@@ -108,7 +116,9 @@ class LiveOverlayManager:
             radius_m=max(250.0, float(resolved_radius)),
             decay_m=max(100.0, float(resolved_decay)),
         )
-        overlay.footprint = _normalized_footprint(self.centers, overlay)
+        overlay.footprint = _normalized_footprint(
+            self.centers, overlay, self.habitability
+        )
         self.people[overlay.id] = overlay
         return overlay
 
@@ -156,11 +166,16 @@ class LiveOverlayManager:
 def _normalized_footprint(
     centers: list[CellCenter],
     overlay: CrowdOverlay,
+    habitability: list[float] | None = None,
 ) -> tuple[tuple[int, float], ...]:
     """Per-cell shares of a crowd's Gaussian blob, summing to 1.0.
 
     A degree-space bounding box rejects almost every cell before the haversine
     runs, and the result is reused for the overlay's whole lifetime.
+
+    ``habitability`` zeroes cells nobody can stand in. Because the shares are
+    normalized afterwards, the crowd still contributes exactly ``total_trips``
+    -- it just lands on the neighbouring land instead of on the water.
     """
     reach_m = overlay.radius_m * 2.0
     lat_span = reach_m / _METERS_PER_DEGREE_LAT
@@ -178,6 +193,8 @@ def _normalized_footprint(
         if distance_m > reach_m:
             continue
         weight = math.exp(-((distance_m / overlay.decay_m) ** 2))
+        if habitability is not None:
+            weight *= habitability[idx]
         if weight <= 1e-6:
             continue
         weights.append((idx, weight))

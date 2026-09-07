@@ -10,12 +10,21 @@ is **normalized to sum to 1**, so population is conserved: the sum of
 ``residents`` over every cell equals the sum over every district. That makes
 per-cell values a genuine density in people-per-cell rather than an arbitrary
 score, and it means the numbers below can be checked against public figures.
+
+A Gaussian on its own is a circle, and Seattle is not: an unweighted spread puts
+people on Elliott Bay and Lake Union. So each cell's weight is also multiplied by
+its **built mass** -- the gross floor area standing there, baked offline by
+``seattle/scripts/build_heatmap_built_mass.py``. Cells with no buildings get a
+hard zero, and dense cells get more of their district's people than empty ones,
+which is what makes the field follow the city instead of a compass rose.
 """
 
 from __future__ import annotations
 
+import json
 import math
 from dataclasses import dataclass
+from pathlib import Path
 
 from .geo import haversine_m
 from .grid import Grid
@@ -89,6 +98,64 @@ SEATTLE_DISTRICTS: tuple[District, ...] = (
 )
 
 
+# How hard built mass shapes the spread. 0.0 disables it and falls back to a
+# plain Gaussian; 1.0 weights strictly by floor area, which drains the
+# neighborhoods into downtown. Halfway keeps the neighborhoods legible while
+# still pinning the field to real buildings.
+BUILT_MASS_EXPONENT = 0.5
+
+# Below this share of the normalizing floor area, a cell is not part of the
+# city. A 500 m cell that clips a single shoreline building -- Union Bay catching
+# the edge of Montlake, Discovery Park catching the ranger station -- otherwise
+# reads as inhabited and lights up half a lake. Genuine low-density cells sit an
+# order of magnitude above it (Magnolia 0.15, Green Lake's half-lake cell 0.05).
+MIN_CELL_BUILT_MASS = 0.01
+
+
+def load_built_mass(path: str | Path, grid: Grid) -> list[float] | None:
+    """Per-cell built-mass weights in ``[0, 1]``, row-major, row 0 north.
+
+    The artifact is authored at ``sub`` times the grid resolution so that open
+    water reads as zero even where a 500 m cell straddles a shoreline; this
+    averages each cell's ``sub x sub`` block back down to one weight per cell.
+
+    Returns ``None`` when the file is missing, so the backend still boots
+    against a bare checkout and falls back to :func:`is_probable_water`.
+    """
+    path = Path(path)
+    if not path.exists():
+        return None
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    rows = int(payload["rows"])
+    cols = int(payload["cols"])
+    sub = int(payload["sub"])
+    weights = payload["weights"]
+
+    if rows != grid.rows or cols != grid.cols:
+        raise ValueError(
+            f"Built-mass grid is {rows}x{cols} but the heatmap grid is "
+            f"{grid.rows}x{grid.cols}; re-run build_heatmap_built_mass.py"
+        )
+    if len(weights) != rows * cols * sub * sub:
+        raise ValueError(
+            f"Built-mass file holds {len(weights)} weights, expected "
+            f"{rows * cols * sub * sub} for a {rows}x{cols} grid at sub={sub}"
+        )
+
+    sub_cols = cols * sub
+    per_cell = float(sub * sub)
+    coarse: list[float] = []
+    for row in range(rows):
+        for col in range(cols):
+            total = 0.0
+            for sub_row in range(sub):
+                start = (row * sub + sub_row) * sub_cols + col * sub
+                total += sum(weights[start : start + sub])
+            coarse.append(total / per_cell)
+    return coarse
+
+
 def cell_centers(grid: Grid) -> list[CellCenter]:
     """Row-major cell centers matching the wire contract's centroid formula."""
     bounds = grid.bounds
@@ -106,19 +173,25 @@ def cell_centers(grid: Grid) -> list[CellCenter]:
 def build_land_use(
     centers: list[CellCenter],
     districts: tuple[District, ...] = SEATTLE_DISTRICTS,
+    built_mass: list[float] | None = None,
 ) -> list[CellLandUse]:
-    """Spread every district's people over the cells, conserving totals."""
+    """Spread every district's people over the cells, conserving totals.
+
+    ``built_mass`` is the per-cell weight from :func:`load_built_mass`. When it
+    is ``None`` this falls back to the hand-drawn :func:`is_probable_water`
+    coastline, which is coarser and misses several water bodies.
+    """
     land_use = [CellLandUse() for _ in centers]
-    on_land = [not is_probable_water(c.lat, c.lon) for c in centers]
+    habitability = cell_habitability(centers, built_mass)
 
     for district in districts:
         weights = [0.0] * len(centers)
         total_weight = 0.0
         for idx, center in enumerate(centers):
-            if not on_land[idx]:
+            if habitability[idx] <= 0.0:
                 continue
             distance_m = haversine_m(center.lat, center.lon, district.lat, district.lon)
-            weight = math.exp(-((distance_m / district.radius_m) ** 2))
+            weight = math.exp(-((distance_m / district.radius_m) ** 2)) * habitability[idx]
             weights[idx] = weight
             total_weight += weight
 
@@ -138,8 +211,34 @@ def build_land_use(
     return land_use
 
 
+def cell_habitability(
+    centers: list[CellCenter],
+    built_mass: list[float] | None,
+) -> list[float]:
+    """Per-cell multiplier for "can anyone plausibly be here".
+
+    Zero means nobody, ever -- open water, or a cell with no buildings at all.
+    This is the one place the water question is answered, so overlays, walksheds
+    and frame composition all agree with land use about where the city is.
+    """
+    if built_mass is None:
+        return [0.0 if is_probable_water(c.lat, c.lon) else 1.0 for c in centers]
+    if len(built_mass) != len(centers):
+        raise ValueError(
+            f"Built-mass has {len(built_mass)} cells but the grid has {len(centers)}"
+        )
+    return [
+        0.0 if mass < MIN_CELL_BUILT_MASS else mass**BUILT_MASS_EXPONENT
+        for mass in built_mass
+    ]
+
+
 # ---------------------------------------------------------------------------
 # Water masking: nobody lives on Puget Sound.
+#
+# Fallback only -- used when the built-mass artifact is absent. It is a
+# hand-drawn approximation and knowingly misses Portage Bay, Union Bay, Green
+# Lake, the Ship Canal and the Duwamish.
 # ---------------------------------------------------------------------------
 
 _PUGET_COAST = (

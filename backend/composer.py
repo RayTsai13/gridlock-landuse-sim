@@ -16,14 +16,24 @@ from .sim_time import SimTime
 # This is the physical calibration: it fixes what "1.0" means, and it does not
 # move between frames, so building transit visibly cools the city instead of
 # being renormalized away.
-MAX_UNMET_TRIPS_PER_CELL_HOUR = 2400.0
+#
+# Raised from 2400 when land use began following built mass (see
+# ``landuse.BUILT_MASS_EXPONENT``). Weighting each district's people by the floor
+# area actually standing there concentrates them into fewer, denser cells, which
+# lifted peak unmet demand downtown by about half. At the old value a dozen
+# downtown cells sat pinned at 1.0 through the middle of the day, so dropping a
+# crowd there changed nothing visible -- the map had no headroom left to show it.
+MAX_UNMET_TRIPS_PER_CELL_HOUR = 3600.0
 
 # Cosmetic shaping only. 1.0 is linear; lower values lift the midtones if the
 # map reads too dark. Adjust this, not MAX_UNMET_TRIPS_PER_CELL_HOUR, for looks.
 DENSITY_GAMMA = 0.85
 
-# Cells at or below this display density are omitted from the frame.
-DISPLAY_THRESHOLD = 0.01
+# Cells at or below this display density are omitted from the frame. Set high
+# enough that the tail of near-invisible cells never ships: the frontend blurs
+# and interpolates whatever it receives, so a few hundred cells at 0.02 arrive
+# as a wash of haze over the whole viewport rather than as faint specks.
+DISPLAY_THRESHOLD = 0.03
 
 
 @dataclass
@@ -50,11 +60,17 @@ class FrameComposer:
         max_unmet_trips: float = MAX_UNMET_TRIPS_PER_CELL_HOUR,
         gamma: float = DENSITY_GAMMA,
         display_threshold: float = DISPLAY_THRESHOLD,
+        habitability: list[float] | None = None,
     ) -> None:
         self.cols = cols
         self.max_unmet_trips = max_unmet_trips
         self.gamma = gamma
         self.display_threshold = display_threshold
+        # The last word on where the city is. Land use, overlays and walksheds
+        # all honour this already; checking it once more at emit time is what
+        # makes "no cell over water ever ships" a property of the wire format
+        # rather than of every upstream path staying correct.
+        self.habitability = habitability
 
     def compose(
         self,
@@ -81,7 +97,10 @@ class FrameComposer:
 
     def _to_sparse_cells(self, unmet: list[float]) -> list[list[int | float]]:
         cells: list[list[int | float]] = []
+        habitability = self.habitability
         for idx, trips in enumerate(unmet):
+            if habitability is not None and habitability[idx] <= 0.0:
+                continue
             density = clamp(trips / self.max_unmet_trips) ** self.gamma
             if density <= self.display_threshold:
                 continue

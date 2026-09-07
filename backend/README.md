@@ -44,6 +44,15 @@ grid GeoJSON
 
 The grid file supplies geometry only. The runtime does not load trained models or scores from `data_processing/`.
 
+Districts are spread with a Gaussian, which is a circle -- and Seattle is not.
+Each cell's weight is therefore also multiplied by its **built mass**: the gross
+floor area standing there, baked offline by
+`seattle/scripts/build_heatmap_built_mass.py`. A cell with no buildings is
+uninhabitable and gets a hard zero, which is what keeps demand off Elliott Bay
+and Lake Union. `State.habitability` is computed once and shared by land use,
+crowd overlays, walksheds, and frame composition, so nothing can disagree about
+where the city is.
+
 ## Modules
 
 | Module | Responsibility |
@@ -51,7 +60,7 @@ The grid file supplies geometry only. The runtime does not load trained models o
 | `server.py` | FastAPI app, endpoints, SSE generator, lifespan-owned frame ticker |
 | `state.py` | Process-wide scenario, playback, overlays, cached frame, and change notification |
 | `grid.py` | GeoJSON parsing and canonical uniform-grid bounds |
-| `landuse.py` | District definitions and conserved per-cell residents/jobs/students/visitors |
+| `landuse.py` | District definitions, the built-mass field, and conserved per-cell residents/jobs/students/visitors |
 | `demand.py` | Weekday/weekend trips-per-person-per-hour curves |
 | `network.py` | Built-in/custom transit networks, walksheds, and service-capacity allocation |
 | `overlays.py` | User-created crowd overlays and spatial/temporal decay |
@@ -76,10 +85,19 @@ The grid file supplies geometry only. The runtime does not load trained models o
 | Variable | Default | Notes |
 | --- | --- | --- |
 | `HEATMAP_GEOJSON` | `seattle/data/processed/seattle_heatmap_grid.geojson` | Resolved from the repository root unless explicitly overridden |
+| `HEATMAP_BUILT_MASS` | `seattle/data/processed/seattle_heatmap_built_mass.json` | Also repo-root relative. If the file is missing the server still boots and falls back to the coarse hand-drawn coastline in `landuse.is_probable_water` |
 | `HEATMAP_FRAME_INTERVAL` | `1.0` | Wall-clock seconds per ticker iteration |
 | `HEATMAP_SIM_STEP_SECONDS` | `1800` | Simulated seconds per frame |
 
 The grid is loaded when `backend.server` is imported, so set environment overrides before starting uvicorn or importing that module in a process.
+
+Simulation tuning stays in code, not the environment:
+`landuse.BUILT_MASS_EXPONENT` and `landuse.MIN_CELL_BUILT_MASS` shape how hard
+built mass steers the spread, and `composer.MAX_UNMET_TRIPS_PER_CELL_HOUR` fixes
+what a density of 1.0 means. The last is calibrated against the built-mass field
+and has to move with it: concentrating people onto real floor area raises peak
+unmet demand, and if the scale does not follow, downtown pins at 1.0 and crowd
+drops there stop being visible.
 
 Playback speeds are quantized to whole simulated minutes per frame because `minute_of_week` is an integer in the wire contract.
 
