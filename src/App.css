@@ -249,8 +249,8 @@
 .app-loading-panel {
   display: grid;
   justify-items: center;
-  gap: 10px;
-  width: min(360px, calc(100vw - 48px));
+  gap: 14px;
+  width: min(520px, calc(100vw - 48px));
   color: #18324b;
   font-family: 'Outfit', sans-serif;
   text-align: center;
@@ -268,14 +268,15 @@
 .loading-kicker {
   color: rgba(24, 50, 75, 0.68);
   font-family: 'Space Mono', monospace;
-  font-size: 0.76rem;
+  font-size: 1rem;
   font-weight: 700;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
 }
 
 .loading-title {
   color: #102a43;
-  font-size: clamp(2rem, 5vw, 3.35rem);
+  font-size: clamp(2.7rem, 6.4vw, 4.6rem);
   font-weight: 800;
   line-height: 0.98;
 }
@@ -283,14 +284,14 @@
 .loading-award {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 5px 12px;
+  gap: 9px;
+  padding: 8px 18px;
   border: 1px solid rgba(246, 200, 95, 0.85);
   border-radius: 999px;
   background: rgba(255, 246, 216, 0.92);
   color: #7a5a12;
   font-family: 'Space Mono', monospace;
-  font-size: 0.68rem;
+  font-size: 0.9rem;
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -298,22 +299,22 @@
 }
 
 .loading-award-icon {
-  font-size: 0.85rem;
+  font-size: 1.15rem;
   line-height: 1;
 }
 
 .loading-status {
-  min-height: 20px;
+  min-height: 26px;
   color: rgba(24, 50, 75, 0.72);
-  font-size: 0.9rem;
+  font-size: 1.15rem;
   font-weight: 600;
 }
 
 .loading-track {
   position: relative;
-  width: min(260px, 70vw);
-  height: 5px;
-  margin-top: 12px;
+  width: min(360px, 74vw);
+  height: 7px;
+  margin-top: 16px;
   overflow: hidden;
   border-radius: 999px;
   background: rgba(24, 50, 75, 0.14);
@@ -332,13 +333,13 @@
 .loading-steps {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-  width: 82px;
-  margin-top: 5px;
+  gap: 10px;
+  width: 116px;
+  margin-top: 8px;
 }
 
 .loading-steps span {
-  height: 4px;
+  height: 6px;
   border-radius: 999px;
   background: rgba(24, 50, 75, 0.18);
   transition: background 260ms ease;
@@ -985,23 +986,23 @@
 }
 
 .loading-detail {
-  max-width: min(320px, 78vw);
-  margin: 10px 0 0;
+  max-width: min(420px, 80vw);
+  margin: 12px 0 0;
   color: rgba(24, 50, 75, 0.66);
-  font-size: 0.82rem;
+  font-size: 1rem;
   line-height: 1.45;
   text-align: center;
 }
 
 .loading-retry {
-  margin-top: 16px;
-  padding: 8px 18px;
+  margin-top: 20px;
+  padding: 11px 24px;
   border: 1px solid rgba(24, 50, 75, 0.22);
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.9);
   color: rgba(24, 50, 75, 0.86);
   font: inherit;
-  font-size: 0.82rem;
+  font-size: 1rem;
   font-weight: 600;
   cursor: pointer;
   transition: background 140ms ease, border-color 140ms ease;
