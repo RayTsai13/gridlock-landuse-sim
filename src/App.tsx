@@ -252,6 +252,11 @@ const BASEMAP_WATER_COLOR = "#a9d8f3";
 // Carto Positron serves its vector tiles from a source named "carto"; water
 // lives on the "water" source-layer.
 const HEATMAP_WATER_CLIP_LAYER_ID = "heatmap-water-clip";
+
+// Upper bound on how long the loading screen waits for MapLibre's first idle
+// render pass. A map that keeps repainting (or never reports idle) still gets
+// revealed instead of stranding the user behind the loading screen.
+const FIRST_PAINT_TIMEOUT_MS = 4000;
 const BASEMAP_WATER_SHADOW_COLOR = "#8fc5e4";
 const BASEMAP_WATERWAY_COLOR = "#87c7ea";
 const BASEMAP_GREENERY_COLOR = "#cfe7bf";
@@ -1108,6 +1113,8 @@ function App() {
     [],
   );
 
+  const [isFirstPaintSettled, setIsFirstPaintSettled] = useState(false);
+
   const initialBuildingRegionLoaded = Boolean(
     regionCollections[REGION_LOAD_ORDER[0]] || regionErrors[REGION_LOAD_ORDER[0]],
   );
@@ -1117,8 +1124,53 @@ function App() {
       heatmapDiagnostics.lastFrameAt &&
       playback,
   );
-  const isAppReady =
+  const contentReady =
     isMapLoaded && initialBuildingRegionLoaded && initialHeatmapStreamLoaded;
+  // A source being *loaded* is not the same as its layers being *painted*.
+  // Revealing on `contentReady` alone let the buildings, the heatmap and the
+  // deck.gl train overlay pop in one frame at a time just as the loading screen
+  // faded. Hold the screen until MapLibre reports an idle render pass (style,
+  // tiles and every GeoJSON source drawn) plus two frames for the interleaved
+  // deck.gl pass, with a timeout so a map that never goes idle cannot wedge it.
+  const isAppReady = contentReady && isFirstPaintSettled;
+
+  useEffect(() => {
+    if (!contentReady || isFirstPaintSettled) {
+      return undefined;
+    }
+    const map = mapRef.current?.getMap();
+    if (!map) {
+      return undefined;
+    }
+
+    // Polled rather than driven by the `idle` event: the train overlay moves
+    // every animation frame, so the interleaved deck.gl pass keeps the map
+    // repainting and `idle` may never fire. `loaded()` is the same predicate
+    // without the quiescence requirement — style parsed, no dirty sources, all
+    // tiles in. Two consecutive true readings means one full frame was painted
+    // with everything on it.
+    let frameHandle = 0;
+    let cleanFrames = 0;
+    const startedAt = performance.now();
+    const poll = () => {
+      if (map.loaded()) {
+        cleanFrames += 1;
+      } else {
+        cleanFrames = 0;
+      }
+      if (
+        cleanFrames >= 2 ||
+        performance.now() - startedAt >= FIRST_PAINT_TIMEOUT_MS
+      ) {
+        setIsFirstPaintSettled(true);
+        return;
+      }
+      frameHandle = requestAnimationFrame(poll);
+    };
+
+    frameHandle = requestAnimationFrame(poll);
+    return () => cancelAnimationFrame(frameHandle);
+  }, [contentReady, isFirstPaintSettled]);
   // The stream retries forever on its own, so without an explicit failure state
   // an unreachable backend leaves a fully-loaded map hidden behind a spinner.
   const streamUnreachable =
@@ -1131,7 +1183,9 @@ function App() {
         ? "Loading city model"
         : !initialHeatmapStreamLoaded
           ? "Syncing simulator"
-          : "Ready";
+          : !isFirstPaintSettled
+            ? "Rendering city"
+            : "Ready";
 
   return (
     <div className={`map-shell ${isAppReady ? "is-ready" : "is-loading"}`}>
