@@ -103,6 +103,11 @@ curl http://127.0.0.1/healthz
 
 The image names in `docker-compose.yml` are placeholders for local builds. The current `Caddyfile` serves plain HTTP on `:80`; publishing port 443 does not enable HTTPS without a configured site address.
 
+Production is deployed from `RayTsai13/gridlock-landuse-sim` to the
+DigitalOcean droplet `gridlock-prod` through GitHub Actions. See the
+[production deployment runbook](docs/deployment.md) for the current target,
+required secrets, verification commands, and recovery procedures.
+
 ## Runtime configuration
 
 The real backend accepts these environment variables:
@@ -122,5 +127,6 @@ Start with the [documentation index](docs/README.md). The most important referen
 - [Heatmap HTTP/SSE contract](docs/heatmap-api-contract.md)
 - [Frontend heatmap integration](docs/frontend-heatmap.md)
 - [Seattle map and building architecture](docs/seattle-map-architecture.md)
+- [Production deployment runbook](docs/deployment.md)
 - [Backend implementation guide](backend/README.md)
 - [Offline data-processing guide](data_processing/README.md)

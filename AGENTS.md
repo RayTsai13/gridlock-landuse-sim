@@ -48,6 +48,12 @@ skipped rather than run.
 CI (`.github/workflows/ci.yml`) runs all of the above plus `npm run lint` and `npm run build`,
 and `deploy.yml` will not deploy unless it passes.
 
+Production deploys from `RayTsai13/gridlock-landuse-sim` to the DigitalOcean
+droplet `gridlock-prod` as the `deploy` user. The checkout is
+`/home/deploy/Gridlock`; operational details and recovery commands are in
+`docs/deployment.md`. The former `DUBHACKS26` droplet was deleted and the old
+`RayTsai13/Gridlock` deployment workflow is disabled.
+
 Docker (production frontend + backend behind Caddy):
 
 ```bash

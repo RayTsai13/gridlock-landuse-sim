@@ -4,6 +4,7 @@ This directory contains the current runtime design and public interface document
 
 | Document | Scope | Update when |
 | --- | --- | --- |
+| [`deployment.md`](deployment.md) | Production droplet, GitHub Actions, credentials, verification, and recovery | Hosting, deployment workflow, secrets, SSH access, or public routing changes |
 | [`heatmap-api-contract.md`](heatmap-api-contract.md) | Canonical HTTP/SSE contract shared by the real backend, mock, and frontend | An endpoint, event, payload, ordering rule, or state gate changes |
 | [`frontend-heatmap.md`](frontend-heatmap.md) | EventSource lifecycle and MapLibre conversion/rendering | `src/heatmap/` behavior changes |
 | [`seattle-map-architecture.md`](seattle-map-architecture.md) | Cached Seattle building data and runtime loading | Building regions, asset generation, or layer ordering changes |
