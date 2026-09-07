@@ -8,7 +8,7 @@
 > the land-use model in `backend/landuse.py` and never consumed these outputs.
 > This document is kept for the reasoning and feature definitions it captures.
 
-This proposal describes how the demand heatmap should evolve for a looping frontend timelapse where users can add stations, lines, frequency changes, and events, then immediately see how demand changes over time.
+This proposal records an earlier direction for a looping frontend timelapse. Parts of the interaction and SSE design were later implemented, but the precomputed model pipeline described here was removed. Use [`README.md`](README.md), [`../backend/README.md`](../backend/README.md), and [`../docs/heatmap-api-contract.md`](../docs/heatmap-api-contract.md) for current behavior.
 
 ## Goal
 

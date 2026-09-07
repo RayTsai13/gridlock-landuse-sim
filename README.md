@@ -1,145 +1,126 @@
 # Gridlock
 
-Seattle-focused map prototype for building and eventually visualizing foot-traffic heatmaps.
+Gridlock is an interactive Seattle transit-demand simulator. A React/TypeScript map displays cached Seattle building geometry, transit build-out scenarios, animated trains, and a foot-traffic pressure heatmap streamed by a FastAPI backend over Server-Sent Events (SSE).
 
-The current frontend is a `React + TypeScript + Vite` app that uses `MapLibre` for the base map, cached local Seattle building region files for structure, and an SSE heatmap overlay for simulated/model output.
+The simulation is analytical rather than machine-learned at runtime: land-use populations generate trips, active transit stops absorb capacity, and the remaining trips are rendered as demand pressure.
 
-## Project Areas
+## Quick start
 
-- `src/`
-  - frontend app, MapLibre map, Seattle building rendering, SSE heatmap overlay
-- `docs/`
-  - frontend/API documentation
-- `seattle/`
-  - Seattle-specific data pipeline, cached asset export scripts, processed artifacts
-- `data_processing/`
-  - shared or non-Seattle data processing utilities
-- `public/seattle/`
-  - cached Seattle building region assets served directly by the frontend
+Requirements:
 
-## Current Map Architecture
+- Node.js 22 and npm
+- Python 3.12
+- Docker and Docker Compose, only for the containerized workflow
 
-- Buildings load from local cached Seattle GeoJSON region files in `public/seattle/`
-- Region loading starts with downtown, then expands outward as additional areas are needed
-- Extrusion heights come from Seattle's official `Seattle_BuildingShells` scene data, joined offline onto `Building_Outlines_2023` footprints
-- Heatmap data is a separate SSE overlay path documented in [`docs/frontend-heatmap.md`](docs/frontend-heatmap.md)
-
-See:
-- [`docs/seattle-map-architecture.md`](docs/seattle-map-architecture.md)
-- [`seattle/README.md`](seattle/README.md)
-
-## Development
-
-Install dependencies:
+Install the frontend dependencies:
 
 ```bash
-npm install
+npm ci
 ```
 
-Run the frontend:
+Create a Python environment and install the backend dependencies:
+
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install -r backend/requirements-dev.txt
+```
+
+Start the real simulation backend in one terminal:
+
+```bash
+.venv/bin/python -m uvicorn backend.server:app --host 0.0.0.0 --port 8000
+```
+
+Start the frontend in another terminal:
 
 ```bash
 npm run dev
 ```
 
-Build the frontend:
+Open `http://localhost:5173`. The frontend requests same-origin `/api/*` paths, and Vite proxies them to the backend on port 8000.
 
-```bash
-npm run build
-```
-
-## Docker
-
-The containerized stack includes only the production frontend and the GeoJSON-backed backend.
-It does not package development-only assets like `mock/`, docs, or data-processing scripts.
-
-Run the app with Docker Compose:
-
-```bash
-docker compose up --build
-```
-
-Then open:
-
-- `http://localhost:8080`
-
-The frontend is served by `nginx` and proxies `/api/*` to the FastAPI backend inside the compose network.
-
-On a server or droplet, run detached and verify backend health:
-
-```bash
-docker compose up -d --build
-docker compose ps
-curl http://127.0.0.1/healthz
-```
-
-The `backend` service now exposes an internal `/healthz` endpoint and Docker
-marks it `healthy` only when that endpoint responds successfully.
-
-## Heatmap Servers
-
-Two implementations of the SSE contract live in this repo:
-
-- `mock/server.py` — fully synthetic, drifting hotspots over a 200×170 grid.
-  Useful for animating the frontend without any real data.
-- `backend/server.py` — the real simulation. Loads `seattle_heatmap_grid.geojson`
-  for grid geometry, then generates demand from a land-use model (residents,
-  jobs, students, visitors per cell x trip rates per hour), subtracts the
-  capacity absorbed by the active transit network, and streams the unmet
-  demand as density.
-
-Either one satisfies the contract in [`docs/heatmap-api-contract.md`](docs/heatmap-api-contract.md).
-
-Run the mock:
-
-```bash
-pip install fastapi uvicorn
-uvicorn mock.server:app --host 0.0.0.0 --port 8000
-```
-
-Or, if your Python env already has `uvicorn`, use the repo script:
+For frontend-only work, the synthetic server implements the same frontend-facing API without loading the Seattle grid artifact:
 
 ```bash
 npm run mock:server
 ```
 
-Run the GeoJSON-backed skeleton:
+Do not run the real backend with multiple workers. Its simulation state and frame producer are process-global, so multiple workers create independent timelines.
+
+## What is in the repository
+
+| Path | Purpose |
+| --- | --- |
+| [`src/`](src/README.md) | React map, heatmap client, scenario UI, building layers, and train animation |
+| [`backend/`](backend/README.md) | GeoJSON-backed FastAPI simulation and SSE server |
+| [`mock/`](mock/README.md) | Synthetic development server with backend-compatible HTTP/SSE behavior |
+| [`docs/`](docs/README.md) | Runtime architecture and wire-contract documentation |
+| [`seattle/`](seattle/README.md) | Seattle building and grid preprocessing |
+| [`data_processing/`](data_processing/README.md) | Offline GTFS, census, and feature-generation utilities; not imported at runtime |
+| `public/seattle/` | Checked-in building regions and other browser-served Seattle assets |
+
+The frontend and both servers share the contract in [`docs/heatmap-api-contract.md`](docs/heatmap-api-contract.md). If a frame, scenario, playback, or crowd endpoint changes, update all three implementations/consumers and the parity tests together.
+
+## Commands
+
+Frontend:
 
 ```bash
-pip install -r backend/requirements.txt
-uvicorn backend.server:app --host 0.0.0.0 --port 8000
+npm run dev          # Vite development server
+npm test             # Vitest once
+npm run test:watch   # Vitest in watch mode
+npm run lint         # ESLint
+npm run build        # TypeScript project build + Vite production build
+npm run preview      # preview the production bundle
 ```
 
-Override runtime config via env vars:
+Backend and data-processing tests:
 
-- `HEATMAP_GEOJSON` — path to a `FeatureCollection` of `r{row}_c{col}` cells
-  (read for grid bounds/rows/cols only)
-- `HEATMAP_FRAME_INTERVAL` — seconds between frame ticks (default `1.0`)
-- `HEATMAP_SIM_STEP_SECONDS` — sim-clock advance per frame (default `1800`)
+```bash
+.venv/bin/python -m pytest backend/tests
+.venv/bin/python -m pip install -r data_processing/requirements.txt
+.venv/bin/python -m pytest data_processing/tests
+```
 
-The frontend listens to:
+The backend tests include endpoint-level parity checks against `mock/server.py`. Run commands from the repository root; `pyproject.toml` configures pytest and async-test discovery.
 
-- `http://localhost:8000/api/heatmap/stream`
+## Docker
 
-## Seattle Data Pipeline
+Build and run the production frontend, backend, and Caddy reverse proxy:
 
-Seattle-specific scripts now live under `seattle/scripts/`.
+```bash
+docker compose up --build
+```
 
-Typical building-data flow:
+Open `http://localhost`. Caddy listens on port 80 and forwards to nginx; nginx serves the frontend and proxies `/api/*` and `/healthz` to the backend.
 
-1. Extract official 3D shell heights from the City scene layer
-2. Join heights onto official 2023 building footprints
-3. Export cached neighborhood GeoJSON chunks into `public/seattle/`
+Useful checks:
 
-Typical heatmap-data flow:
+```bash
+docker compose ps
+curl http://127.0.0.1/healthz
+```
 
-1. Build Seattle grid features
+The image names in `docker-compose.yml` are placeholders for local builds. The current `Caddyfile` serves plain HTTP on `:80`; publishing port 443 does not enable HTTPS without a configured site address.
 
-The backend reads the grid GeoJSON for geometry only and generates demand
-analytically from the land-use model in `backend/landuse.py`. There is no
-machine learning in this repository.
+## Runtime configuration
 
-See [`seattle/README.md`](seattle/README.md) for the Seattle workspace layout and commands.
+The real backend accepts these environment variables:
 
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `HEATMAP_GEOJSON` | `seattle/data/processed/seattle_heatmap_grid.geojson` | Grid `FeatureCollection`; geometry determines bounds, rows, and columns |
+| `HEATMAP_FRAME_INTERVAL` | `1.0` | Wall-clock seconds between frame ticks |
+| `HEATMAP_SIM_STEP_SECONDS` | `1800` | Simulated seconds advanced per frame |
 
+Simulation calibration lives in `backend/demand.py`, `backend/network.py`, `backend/overlays.py`, and `backend/composer.py`, not in environment variables.
 
+## Documentation
+
+Start with the [documentation index](docs/README.md). The most important references are:
+
+- [Heatmap HTTP/SSE contract](docs/heatmap-api-contract.md)
+- [Frontend heatmap integration](docs/frontend-heatmap.md)
+- [Seattle map and building architecture](docs/seattle-map-architecture.md)
+- [Backend implementation guide](backend/README.md)
+- [Offline data-processing guide](data_processing/README.md)

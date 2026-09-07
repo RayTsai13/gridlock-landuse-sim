@@ -1,8 +1,7 @@
 [tool.pytest.ini_options]
-# The backend resolves HEATMAP_GEOJSON relative to the working directory and
-# loads it at import time, so tests must run from the repository root. Pinning
-# rootdir here (this file's directory) makes `pytest backend/tests` work from
-# anywhere.
+# The backend loads HEATMAP_GEOJSON at import time. Its default is anchored to
+# the repository root, and pinning pytest's rootdir here also keeps package
+# imports and test discovery stable when pytest is launched from elsewhere.
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 testpaths = ["backend/tests", "data_processing/tests"]

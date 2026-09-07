@@ -50,16 +50,17 @@ skipped rather than run.
 CI (`.github/workflows/ci.yml`) runs all of the above plus `npm run lint` and `npm run build`,
 and `deploy.yml` will not deploy unless it passes.
 
-Docker (production frontend + backend only):
+Docker (production frontend + backend behind Caddy):
 
 ```bash
-docker compose up --build      # frontend on http://localhost:8080, proxies /api/* to backend
+docker compose up --build      # app on http://localhost, proxies /api/* to backend
 ```
 
 ## Architecture
 
 **Frontend (`src/`)** — React 19 + TypeScript + Vite. `react-map-gl/maplibre` renders the base map with a
 `@deck.gl` overlay (`DeckGLOverlay.tsx`) for 3D layers.
+
 - `src/heatmap/` — SSE client and heatmap rendering: `stream.ts` (`useHeatmap` hook / SSE consumer), `grid.ts`,
   `layer.ts`, `api.ts`.
 - `src/stops/` — transit stops, lines, and animated trains: `data.ts` (stops/lines + GeoJSON helpers),
@@ -83,12 +84,13 @@ grid geometry only. Notable endpoints:
 `GET /api/heatmap/stream` (SSE), `GET /healthz`, `POST /api/scenario`, `GET|POST /api/playback`,
 `POST /api/playback/seek`, and `GET|POST|DELETE /api/people`.
 
-**`mock/server.py`** — synthetic drifting-hotspot heatmap over a 200×170 grid; satisfies the same SSE contract as
+**`mock/server.py`** — synthetic drifting-hotspot heatmap over a 57×36 grid; satisfies the same SSE contract as
 the real backend. Use it to animate the frontend without real data.
 
 **Data pipelines:**
+
 - `seattle/` — Seattle-specific data pipeline (building shell heights, footprint joins, neighborhood GeoJSON export
-  to `public/seattle/`, heatmap grid + model). See `seattle/README.md`.
+  to `public/seattle/`, heatmap grid, and station vectors). See `seattle/README.md`.
 - `data_processing/` — offline feature-building only, not used at runtime: shared / non-Seattle data processing
   utilities (GTFS in `data_processing/gtfs/`, scripts, src, tests). Nothing here is imported by `backend/`, and it is
   excluded from the Docker build. The model-training stage was removed; there is no ML anywhere in this repo.
@@ -97,10 +99,13 @@ the real backend. Use it to animate the frontend without real data.
 
 ## Key contracts & docs
 
-- SSE heatmap API contract: `docs/heatmap-api-contract.md` (both `backend/` and `mock/` implement it).
-- Frontend heatmap integration: `docs/frontend-heatmap.md`. Frontend listens on
-  `http://localhost:8000/api/heatmap/stream`.
+- Documentation index: `docs/README.md`.
+- SSE heatmap API contract: `docs/heatmap-api-contract.md` (both `backend/` and `mock/` implement its frontend-facing surface).
+- Frontend heatmap integration: `docs/frontend-heatmap.md`. Frontend requests the same-origin
+  `/api/heatmap/stream`; Vite and nginx proxy `/api/*` to the backend.
 - Map architecture: `docs/seattle-map-architecture.md`.
+- Folder guides: `backend/README.md`, `mock/README.md`, `src/README.md`,
+  `src/heatmap/README.md`, and `src/stops/README.md`.
 
 ## Backend env overrides
 
@@ -128,7 +133,7 @@ longer depends on the working directory.
   `backend.Dockerfile` copies `seattle/data/processed/seattle_heatmap_grid.geojson` (840 KB).
   The rest are regenerable via the `seattle/` pipeline. Removing them needs a history rewrite
   plus a manual re-clone on the droplet, so it has been left alone deliberately.
-- **`src/App.tsx` is a ~1,400-line component.** It mixes the building-region loading scheduler,
+- **`src/App.tsx` is a ~1,500-line component.** It mixes the building-region loading scheduler,
   camera policy, basemap restyling, the time-dial pointer maths, crowd drag/drop, deck.gl layer
   construction and all markup. `demandMetricsFromDensity` also puts demand-model logic in the
   view layer. The natural split is `useBuildingRegions` / `useTimeDial` / `useCrowdDrop`.

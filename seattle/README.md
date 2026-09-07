@@ -4,6 +4,18 @@ This folder is the Seattle-specific workspace for the project.
 
 For the frontend/runtime map architecture, see [docs/seattle-map-architecture.md](../docs/seattle-map-architecture.md).
 
+## Running the scripts
+
+Run Seattle scripts from the repository root. The building-height and region scripts use the Python standard library; `build_seattle_station_vectors.py` also needs the packages in `data_processing/requirements.txt`.
+
+```bash
+python3 seattle/scripts/extract_seattle_building_heights.py
+python3 seattle/scripts/join_seattle_building_heights.py
+python3 seattle/scripts/export_seattle_building_regions.py
+```
+
+These commands make network requests and overwrite checked-in generated artifacts after successful fetch/processing. Review file sizes, generated summaries, and the git diff before committing regenerated data. Each script supports `--help` and optional limits useful for smaller validation runs.
+
 ## Layout
 
 - `scripts/` (all build-time only; the backend imports none of them)
@@ -60,6 +72,14 @@ The building pipeline is the one that still matters day to day:
 3. Run `export_seattle_building_regions.py`
 4. The frontend loads the cached region GeoJSON files from `public/seattle/`
 
+The concrete root-level commands are:
+
+```bash
+python3 seattle/scripts/extract_seattle_building_heights.py
+python3 seattle/scripts/join_seattle_building_heights.py
+python3 seattle/scripts/export_seattle_building_regions.py
+```
+
 The heatmap dataset builder moved to `data_processing/`
 (`src/pipelines/seattle/build_heatmap_dataset.py`). The model-training stage
 that once followed it has been removed: the backend generates demand
@@ -81,3 +101,5 @@ analytically from the land-use model in `backend/landuse.py`.
 
 - Runtime map loading should use local cached Seattle assets, not live ArcGIS building queries.
 - The Seattle scripts resolve their default output paths relative to `seattle/scripts/`.
+- `fetch_seattle_buildings.py` and `public/seattle/seattle-buildings.geojson` are legacy OSM paths; the region files generated from official Seattle footprints are the active path.
+- `build_seattle_station_vectors.py` predates the equivalent module under `data_processing/src/pipelines/seattle/`. Prefer the data-processing module for the maintained offline feature workflow.

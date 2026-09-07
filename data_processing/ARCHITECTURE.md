@@ -1,4 +1,4 @@
-# Data Pipeline Architecture and Dispersion Model Plan
+# Historical Data Pipeline Architecture and Dispersion Model Plan
 
 > **Historical design record.** The model pipeline described below has been
 > removed from the repository: `src/models/`, `src/pipelines/delhi/prepare_train_test.py`,
@@ -8,9 +8,9 @@
 > the land-use model in `backend/landuse.py` and never consumed these outputs.
 > This document is kept for the reasoning and feature definitions it captures.
 
-This document describes the current data-processing architecture for training a city-generic relative demand heatmap from Delhi Metro passenger-per-train data, then applying that learned behavior to station vectors and GTFS supply from other cities such as Seattle.
+This document describes the model-training architecture that was proposed and partially implemented before that runtime path was removed. It is not a current implementation guide; use [`README.md`](README.md) for the remaining feature builders.
 
-The repository now contains both the reusable station-vector foundation and a Delhi-weak-supervised demand heatmap path. The older Seattle-only heatmap baseline and passenger-flow timelapse scorer remain available as proxy models.
+The repository retains the reusable station-vector and feature-building foundation. It no longer contains the training, scoring, or passenger-flow model modules described later in this record.
 
 ## Goals
 
@@ -60,7 +60,7 @@ The Puget Sound GTFS feed is multimodal, so station-only work should first run `
 
 For repeatable local runs, `scripts/build_features.py` orchestrates the common build commands. The training and scenario-scoring wrappers described in earlier revisions have been removed along with the model pipeline.
 
-## Current Architecture
+## Archived Architecture
 
 There are three related but separate data paths.
 
@@ -556,4 +556,3 @@ Possible integration:
 3. Add route-shape exposure, not only station/frequency exposure, so new routes can affect cells between stops more directly.
 4. Add a map-facing export that tiles or compresses the 48-bin x 7 prediction CSV for fast frontend playback.
 5. Keep the older OD-dispersion idea as a separate layer if the UI needs station-to-station arcs in addition to grid heat.
-

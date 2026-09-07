@@ -1,5 +1,5 @@
 # Offline data-processing pipelines only. Nothing here is imported at runtime
-# by backend/ or the frontend; see CLAUDE.md.
+# by backend/ or the frontend; see data_processing/README.md.
 pandas>=2.0,<3.0
 numpy>=1.24,<3.0
 requests>=2.31,<3.0

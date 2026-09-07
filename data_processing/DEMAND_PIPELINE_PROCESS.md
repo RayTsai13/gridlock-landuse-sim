@@ -1,4 +1,4 @@
-# Demand Heatmap Pipeline Process
+# Historical Demand Heatmap Pipeline Process
 
 > **Historical design record.** The model pipeline described below has been
 > removed from the repository: `src/models/`, `src/pipelines/delhi/prepare_train_test.py`,
@@ -8,11 +8,11 @@
 > the land-use model in `backend/landuse.py` and never consumed these outputs.
 > This document is kept for the reasoning and feature definitions it captures.
 
-This document explains the current end-to-end demand heatmap process: what data enters each stage, what artifacts are generated, and what the important columns mean.
+This document explains the removed end-to-end demand heatmap process: what data entered each stage, what artifacts it generated, and what its important columns meant. Use [`README.md`](README.md) for commands that still exist.
 
 The main output is a **relative demand-pressure timelapse**, not calibrated ridership. Delhi data weakly supervises demand potential; Seattle inputs provide the target city's station, census, GTFS, and optional jobs context.
 
-## Current Data Sources
+## Archived Data Sources
 
 ### Delhi
 

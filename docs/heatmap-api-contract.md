@@ -10,7 +10,7 @@ The frontend treats each streamed frame as the complete current display state.
 Frames are sparse but are **snapshots, not deltas** — a cell absent from a frame
 is zero, not unchanged.
 
-Two implementations satisfy this contract:
+Two implementations satisfy the frontend-facing portion of this contract:
 
 - `backend/server.py` — the real simulation (land use → demand → transit capacity).
 - `mock/server.py` — a fully synthetic drifting-hotspot generator, no data files.
@@ -19,32 +19,34 @@ Both listen on `http://localhost:8000`. The frontend never uses an absolute API 
 requests the same-origin path `/api/*`, which the Vite dev server (port 5173) and nginx (in
 the container) each proxy to the backend. See `vite.config.ts` and `nginx.conf`.
 
-Both are exercised by the same test suite -- `backend/tests/test_server_parity.py` runs every
-endpoint-level assertion in this document against both apps, so the mock cannot drift.
+The shared endpoints are exercised by `backend/tests/test_server_parity.py`, which runs the
+frontend-facing endpoint assertions against both apps. The real backend additionally exposes
+the container health check documented below.
 
 ---
 
 ## API Surfaces
 
-| Method | Path | Used by frontend |
-|---|---|---|
-| GET | `/api/heatmap/stream` | yes — the SSE stream |
-| POST | `/api/scenario` | yes — deploy a transit build-out |
-| POST | `/api/playback` | yes — play / pause |
-| POST | `/api/playback/seek` | yes — time dial |
-| POST | `/api/people` | yes — drop a crowd |
-| DELETE | `/api/people/{id}` | yes |
-| DELETE | `/api/people` | yes |
-| GET | `/api/playback` | no — diagnostics |
-| GET | `/api/people` | no — diagnostics |
-| GET | `/healthz` | no — container health check |
+| Method | Path | Used by frontend | Provided by |
+|---|---|---|---|
+| GET | `/api/heatmap/stream` | yes — the SSE stream | backend + mock |
+| POST | `/api/scenario` | yes — deploy a transit build-out | backend + mock |
+| POST | `/api/playback` | yes — play / pause | backend + mock |
+| POST | `/api/playback/seek` | yes — time dial | backend + mock |
+| POST | `/api/people` | yes — drop a crowd | backend + mock |
+| DELETE | `/api/people/{id}` | yes | backend + mock |
+| DELETE | `/api/people` | yes | backend + mock |
+| GET | `/api/playback` | no — diagnostics | backend + mock |
+| GET | `/api/people` | no — diagnostics | backend + mock |
+| GET | `/healthz` | no — container health check | backend only |
 
 ---
 
 ## Grid Configuration
 
-The backend owns the grid and sends its dimensions on connect. The frontend
-adapts to whatever size it receives.
+The active server owns the grid and sends its dimensions on connect. The frontend
+adapts to whatever size it receives. This example is the canonical grid loaded by
+the real backend; the mock currently reports `57 × 36` with slightly different bounds.
 
 ```json
 {
