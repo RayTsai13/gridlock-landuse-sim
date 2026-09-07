@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +19,7 @@ from .network import (
     default_network_for_scenario,
     parse_network_payload,
 )
+from .protocol import validate_network_size
 from .overlays import CrowdOverlay, LiveOverlayManager
 from .sim_time import PlaybackController
 
@@ -83,6 +85,7 @@ class State:
         self._cond: asyncio.Condition | None = None
         self._latest_frame: dict[str, object] | None = None
         self._subscribers: int = 0
+        self._encoded_frame: str | None = None
 
     @property
     def version(self) -> int:
@@ -140,18 +143,18 @@ class State:
     ) -> None:
         if scenario_id not in VALID_SCENARIO_IDS:
             raise ValueError(f"Unknown scenario_id: {scenario_id!r}")
-        self.scenario_id = scenario_id
-        self.active_network = parse_network_payload(
+        validate_network_size(stops, lines)
+        network = parse_network_payload(
             scenario_id=scenario_id,
             stops_payload=stops,
             lines_payload=lines,
         )
-        self.service = ServiceCapacity(
-            self.grid,
-            self.active_network,
-            centers=self.centers,
-            habitability=self.habitability,
-        )
+        if network != self.active_network:
+            self.service = ServiceCapacity(
+                self.grid, network, centers=self.centers, habitability=self.habitability,
+            )
+        self.scenario_id = scenario_id
+        self.active_network = network
         self.scenario_revision += 1
         self._state_counter += 1
         self.invalidate_frame()
@@ -187,6 +190,15 @@ class State:
         self._state_counter += 1
         self.invalidate_frame()
         return overlay
+
+    def add_people_batch(self, entries: list[dict]) -> list[CrowdOverlay]:
+        # Build every footprint before publishing any part of the mutation.
+        staged = LiveOverlayManager(self.centers, self.habitability)
+        people = [staged.add(**entry, sim_time=self.playback.current_time) for entry in entries]
+        self.people.update(staged.people)
+        self._state_counter += 1
+        self.invalidate_frame()
+        return people
 
     def remove_person(self, person_id: str) -> None:
         self.overlays.remove(person_id)
@@ -240,6 +252,8 @@ class State:
         This is the *only* place the simulation clock moves. Called once per
         interval by the frame ticker, never by a connection.
         """
+        if not self.playback.is_playing:
+            return
         self.playback.advance()
         self.invalidate_frame()
         self.current_frame()
@@ -248,6 +262,12 @@ class State:
 
     def invalidate_frame(self) -> None:
         self._latest_frame = None
+        self._encoded_frame = None
+
+    def encoded_frame(self) -> str:
+        if self._encoded_frame is None:
+            self._encoded_frame = json.dumps(self.current_frame(), separators=(",", ":"))
+        return self._encoded_frame
 
     def current_frame(self) -> dict[str, object]:
         """The frame every connection shares, composed at most once per change."""

@@ -8,9 +8,11 @@ import {
   deletePerson,
   postPlayback,
   postPeople,
+  postPeopleBatch,
   postScenario,
   seekPlayback,
   type PeopleOptions,
+  type PeopleDrop,
   type PlaybackState,
   type PlacedPerson,
   type ScenarioLine,
@@ -60,6 +62,7 @@ export type HeatmapApi = {
     options?: PeopleOptions,
   ) => Promise<PlacedPerson>;
   removePeople: (id: string) => Promise<void>;
+  addPeopleBatch: (people: PeopleDrop[]) => Promise<PlacedPerson[]>;
   clearPeople: () => Promise<void>;
 };
 
@@ -349,6 +352,7 @@ export function useHeatmap(options: HeatmapOptions = {}): HeatmapApi {
     [],
   );
   const removePeople = useCallback((id: string) => deletePerson(id), []);
+  const addPeopleBatch = useCallback((people: PeopleDrop[]) => postPeopleBatch(people), []);
   const clearPeople = useCallback(() => deleteAllPeople(), []);
 
   return {
@@ -361,6 +365,7 @@ export function useHeatmap(options: HeatmapOptions = {}): HeatmapApi {
     setPlaying,
     seekTo,
     addPeople,
+    addPeopleBatch,
     removePeople,
     clearPeople,
   };

@@ -14,7 +14,7 @@ Instead, it:
 
 1. starts on a downtown Seattle camera
 2. loads cached local GeoJSON region files from `public/seattle/`
-3. merges the loaded region files into one building source
+3. selects only regions intersecting the padded viewport, with one URL-backed source per region
 4. renders those footprints as MapLibre `fill-extrusion`
 5. overlays the SSE heatmap source above the buildings
 
@@ -50,15 +50,21 @@ Initial view:
 - pitch `55`
 - bearing `-18`
 
-Initial loading order:
+Downtown remains selected until its first source-load event. Other sources are selected
+only when they intersect the current viewport plus a 20% margin. MapLibre fetches their
+URLs directly in its worker; App does not retain parsed GeoJSON objects. Panning removes
+offscreen sources, and returning can reuse the browser HTTP cache. At citywide zooms all
+intersecting regions are deliberately visible; vector tiles remain a possible later step.
 
-1. `Downtown Core`
-2. `East Neighborhoods`
-3. `Northwest Seattle`
-4. `Beacon Hill`
-5. `West Seattle`
+Train animation lives in the deferred `MapOverlays.tsx` subtree, so animation frames do
+not rerender the map controls. The landmark code/model loads only when its coordinates
+enter the padded viewport. Its runtime asset is `space-needle.optimized.glb` (2048px
+WebP texture); the original GLB remains available offline for regeneration.
 
-The app keeps a small region status UI so you can tell whether each neighborhood is `Loaded`, `Loading`, `Queued`, `Waiting`, or `Error`.
+Run `npm run optimize:landmark` after changing the source model. `npm run build` checks
+landmark and entry-JavaScript size budgets and excludes legacy unused public assets from
+the production output. The optimization script preserves mesh buffers and materials;
+the installed glTF loader supports the required `EXT_texture_webp` extension.
 
 ## Data Sources
 

@@ -24,6 +24,8 @@ The development server runs at `http://localhost:5173` and proxies same-origin `
 | `App.tsx` | Top-level UI and map composition |
 | `App.css`, `index.css` | Application and global styling |
 | `DeckGLOverlay.tsx` | MapLibre/deck.gl overlay bridge |
+| `MapOverlays.tsx`, `SpaceNeedle.ts` | Deferred animation subtree and viewport-gated landmark |
+| `buildings/visibility.ts` | Viewport-only region selection |
 | `Mascot.tsx`, `Mascot.css` | Draggable crowd-placement mascot |
 | [`heatmap/`](heatmap/README.md) | HTTP client, SSE lifecycle, frame conversion, and density styling |
 | [`stops/`](stops/README.md) | Transit definitions, MapLibre layers, track geometry, and train synthesis |
@@ -41,4 +43,3 @@ Browser-served building GeoJSON and the Space Needle model live in `../public/se
 - TypeScript module imports use explicit `.ts` or `.tsx` extensions; stylesheet imports retain their normal extension.
 
 `App.tsx` is intentionally the current integration point but is large. New isolated behavior should prefer a focused hook or module instead of extending unrelated responsibilities there.
-

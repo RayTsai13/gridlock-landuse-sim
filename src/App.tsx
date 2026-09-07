@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, useRef } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState, useRef } from "react";
 import {
   Layer,
   Map,
@@ -6,7 +6,7 @@ import {
   Source,
   Marker,
 } from "react-map-gl/maplibre";
-import type { FeatureCollection, Geometry, Point } from "geojson";
+import type { FeatureCollection, Point } from "geojson";
 import type { LngLatBoundsLike, Map as MapLibreMap } from "maplibre-gl";
 import type { LayerProps } from "react-map-gl/maplibre";
 import type {
@@ -17,15 +17,12 @@ import type {
 import "maplibre-gl/dist/maplibre-gl.css";
 import "./App.css";
 import { useHeatmap } from "./heatmap/stream.ts";
+import type { PeopleDrop } from "./heatmap/api.ts";
+import { visibleBuildingRegions } from "./buildings/visibility.ts";
 import { HEATMAP_LAYER_ID, heatmapLayer } from "./heatmap/layer.ts";
 import { useBuiltMass } from "./heatmap/mask.ts";
 import { DEPLOY_STEPS, stopsToGeoJSON, linesToGeoJSON } from "./stops/data.ts";
 import type { TransitStop, TransitLine } from "./stops/data.ts";
-import {
-  synthesizeTrainInstances,
-  type TrainInstance,
-  useInterpolatedMinuteOfWeek,
-} from "./stops/trains.ts";
 import {
   lineCasingLayer,
   lineRouteLayer,
@@ -35,43 +32,9 @@ import {
   deployPulseRingLayer,
   deployGlowDotLayer,
 } from "./stops/layers.ts";
-import { DeckGLOverlay } from "./DeckGLOverlay.tsx";
-import { ScenegraphLayer } from "@deck.gl/mesh-layers";
-import { AmbientLight, DirectionalLight, LightingEffect } from "@deck.gl/core";
-import { ScatterplotLayer } from "@deck.gl/layers";
 import { Mascot } from "./Mascot.tsx";
 
-const ambientLight = new AmbientLight({
-  color: [255, 255, 255],
-  intensity: 10.0, // Supernova brightness
-});
-
-const blueLight = new DirectionalLight({
-  color: [255, 255, 255], // Pure white directional light
-  intensity: 5.0,
-  direction: [-1, -3, -1],
-});
-
-const lightingEffect = new LightingEffect({ ambientLight, blueLight });
-// Stable identities: a fresh array or layer literal on every render makes
-// deck.gl re-diff its effects and re-upload the Space Needle model each frame.
-const deckEffects = [lightingEffect];
-
-const SPACE_NEEDLE_DATA = [{ position: [-122.3493, 47.6205] as [number, number] }];
-const spaceNeedleLayer = new ScenegraphLayer({
-  id: "space-needle-3d-v5",
-  data: SPACE_NEEDLE_DATA,
-  scenegraph: "/seattle/SPACE NEEDLE.glb",
-  getPosition: (d: { position: [number, number] }) => d.position,
-  getOrientation: [0, 0, 90],
-  getScale: [1, 1, 1],
-  sizeScale: 1.2,
-  opacity: 0.6,
-  _lighting: "pbr",
-  parameters: {
-    depthTest: true,
-  },
-});
+const MapOverlays = lazy(() => import("./MapOverlays.tsx"));
 
 const initialViewState = {
   longitude: -122.3337,
@@ -210,20 +173,6 @@ const cameraMaxBounds = [
   cameraBoundary.north,
 ] satisfies LngLatBoundsLike;
 
-const REGION_LOAD_ORDER = [
-  "downtown-core",
-  "east-neighborhoods",
-  "northwest-seattle",
-  "beacon-hill",
-  "west-seattle",
-] as const;
-
-const REGION_PRIORITY = new globalThis.Map<string, number>(
-  REGION_LOAD_ORDER.map(
-    (regionId, index) => [regionId, index] as [string, number],
-  ),
-);
-
 const buildingFillLayer: LayerProps = {
   id: "official-seattle-buildings-fill",
   type: "fill-extrusion",
@@ -300,17 +249,6 @@ function applyBasemapPalette(map: MapLibreMap) {
   }
 }
 
-async function fetchRegionBuildings(
-  region: BuildingRegion,
-  signal: AbortSignal,
-) {
-  const response = await fetch(region.url, { signal });
-  if (!response.ok) {
-    throw new Error(`${region.label} failed with ${response.status}`);
-  }
-  return response.json() as Promise<FeatureCollection<Geometry>>;
-}
-
 function expandBounds(bounds: Bounds) {
   const lonPad = (bounds.east - bounds.west) * 0.2;
   const latPad = (bounds.north - bounds.south) * 0.2;
@@ -339,23 +277,6 @@ function containsBounds(outer: Bounds, inner: Bounds) {
     inner.south >= outer.south &&
     inner.east <= outer.east &&
     inner.north <= outer.north
-  );
-}
-
-function intersectsBounds(a: Bounds, b: Bounds) {
-  return !(
-    a.east < b.west ||
-    a.west > b.east ||
-    a.north < b.south ||
-    a.south > b.north
-  );
-}
-
-function sortRegionIds(regionIds: string[]) {
-  return [...new Set(regionIds)].sort(
-    (left, right) =>
-      (REGION_PRIORITY.get(left) ?? Number.MAX_SAFE_INTEGER) -
-      (REGION_PRIORITY.get(right) ?? Number.MAX_SAFE_INTEGER),
   );
 }
 
@@ -409,7 +330,7 @@ function App() {
     playback,
     setPlaying,
     seekTo,
-    addPeople,
+    addPeopleBatch,
     diagnostics: heatmapDiagnostics,
     retryConnection,
   } = useHeatmap({ renderGeometry: isHeatmapVisible, builtMass });
@@ -424,25 +345,16 @@ function App() {
     null,
   );
 
-  // Building state
-  const [regionCollections, setRegionCollections] = useState<
-    Record<string, FeatureCollection<Geometry>>
-  >({});
   const [queryBounds, setQueryBounds] = useState(initialBounds);
-  const [queuedRegionIds, setQueuedRegionIds] = useState<string[]>(
-    REGION_LOAD_ORDER.slice(1) as unknown as string[],
+  const [initialBuildingRegionLoaded, setInitialBuildingRegionLoaded] = useState(false);
+  // URLs let MapLibre fetch/parse on its worker; offscreen sources are released.
+  const visibleRegions = useMemo(
+    () => visibleBuildingRegions(BUILDING_REGIONS, queryBounds, initialBuildingRegionLoaded),
+    [queryBounds, initialBuildingRegionLoaded],
   );
-  const [activeRegionId, setActiveRegionId] = useState<string | null>(
-    REGION_LOAD_ORDER[0],
-  );
-  const [regionErrors, setRegionErrors] = useState<Record<string, string>>({});
-  // Sorted so the render order of the <Source> list is stable as regions
-  // stream in; each keeps its own tiles, so a new region costs only itself.
-  const loadedRegions = useMemo(
-    () =>
-      Object.entries(regionCollections).sort(([a], [b]) => a.localeCompare(b)),
-    [regionCollections],
-  );
+  const showSpaceNeedle = containsBounds(queryBounds, {
+    west: -122.3493, east: -122.3493, south: 47.6205, north: 47.6205,
+  });
 
   // Time controls
   const [timeOfDay, setTimeOfDay] = useState(0);
@@ -497,7 +409,6 @@ function App() {
   } | null>(null);
 
   const backendIsPlaying = playback?.is_playing ?? false;
-  const interpolatedMinuteOfWeek = useInterpolatedMinuteOfWeek(playback);
 
   useEffect(() => {
     if (!playback?.sim_time || isDraggingDial) return;
@@ -548,164 +459,12 @@ function App() {
     () => linesToGeoJSON(activeLines, activeStops),
     [activeLines, activeStops],
   );
-  const trainInstances = useMemo(
-    () => synthesizeTrainInstances(activeLines, interpolatedMinuteOfWeek),
-    [activeLines, interpolatedMinuteOfWeek],
-  );
-  const deckLayers = useMemo(
-    () => [
-      spaceNeedleLayer,
-      new ScatterplotLayer({
-        id: "train-glow-layer",
-        beforeId: "transit-stops-labels",
-        data: trainInstances,
-        pickable: false,
-        radiusUnits: "pixels",
-        radiusMinPixels: 10,
-        radiusMaxPixels: 10,
-        stroked: false,
-        filled: true,
-        getPosition: (train: TrainInstance) => train.coordinates,
-        getFillColor: (train: TrainInstance) =>
-          [train.color[0], train.color[1], train.color[2], 70] as [
-            number,
-            number,
-            number,
-            number,
-          ],
-        parameters: {
-          depthTest: false,
-        },
-      }),
-      new ScatterplotLayer({
-        id: "train-head-layer",
-        beforeId: "transit-stops-labels",
-        data: trainInstances,
-        pickable: false,
-        radiusUnits: "pixels",
-        radiusMinPixels: 5,
-        radiusMaxPixels: 5,
-        stroked: true,
-        lineWidthUnits: "pixels",
-        lineWidthMinPixels: 2,
-        filled: true,
-        getPosition: (train: TrainInstance) => train.coordinates,
-        getFillColor: (train: TrainInstance) => train.color,
-        getLineColor: [245, 250, 255, 220],
-        parameters: {
-          depthTest: false,
-        },
-      }),
-    ],
-    [trainInstances],
-  );
-
-  // ── Building loading effects ──
-  useEffect(() => {
-    const loadedRegionIds = Object.keys(regionCollections);
-    const inViewRegionIds = BUILDING_REGIONS.filter((region) =>
-      intersectsBounds(region.bounds, queryBounds),
-    ).map((region) => region.id);
-    const pendingRegionIds = sortRegionIds([
-      ...inViewRegionIds,
-      ...REGION_LOAD_ORDER,
-    ]).filter(
-      (regionId) =>
-        !loadedRegionIds.includes(regionId) &&
-        regionId !== activeRegionId &&
-        !regionErrors[regionId],
-    );
-
-    queueMicrotask(() => {
-      setQueuedRegionIds((current) =>
-        sortRegionIds([
-          ...current.filter(
-            (regionId) =>
-              !loadedRegionIds.includes(regionId) &&
-              regionId !== activeRegionId &&
-              !regionErrors[regionId],
-          ),
-          ...pendingRegionIds,
-        ]),
-      );
-    });
-  }, [activeRegionId, queryBounds, regionCollections, regionErrors]);
-
-  useEffect(() => {
-    if (activeRegionId !== null || queuedRegionIds.length === 0) {
-      return;
-    }
-
-    queueMicrotask(() => {
-      setActiveRegionId(queuedRegionIds[0]);
-      setQueuedRegionIds((current) => current.slice(1));
-    });
-  }, [activeRegionId, queuedRegionIds]);
-
-  useEffect(() => {
-    if (activeRegionId === null) {
-      return undefined;
-    }
-
-    const region = BUILDING_REGIONS.find(
-      (candidate) => candidate.id === activeRegionId,
-    );
-    if (!region) {
-      queueMicrotask(() => setActiveRegionId(null));
-      return undefined;
-    }
-
-    const controller = new AbortController();
-    queueMicrotask(() => {
-      setRegionErrors((current) => {
-        const next = { ...current };
-        delete next[activeRegionId];
-        return next;
-      });
-    });
-
-    void fetchRegionBuildings(region, controller.signal)
-      .then((featureCollection) => {
-        setRegionCollections((current) => ({
-          ...current,
-          [region.id]: featureCollection,
-        }));
-        setRegionErrors((current) => {
-          const next = { ...current };
-          delete next[region.id];
-          return next;
-        });
-      })
-      .catch((error: unknown) => {
-        if (!(error instanceof DOMException && error.name === "AbortError")) {
-          console.error(error);
-          setRegionErrors((current) => ({
-            ...current,
-            [region.id]: "Error",
-          }));
-        }
-      })
-      .finally(() => {
-        // An aborted run has already been superseded; clearing the active id
-        // here would cancel the replacement request that now owns it.
-        if (controller.signal.aborted) return;
-        setActiveRegionId((current) =>
-          current === region.id ? null : current,
-        );
-      });
-
-    return () => {
-      controller.abort();
-    };
-    // Deliberately not keyed on `queryBounds`: this effect does not read it,
-    // and re-running on every pan aborted in-flight downloads of region files
-    // up to 34 MB, so large regions could never finish while the user explored.
-  }, [activeRegionId]);
-
   function updateBuildingsForViewport(map: MapRef) {
     const nextBounds = boundsFromMap(map);
     setQueryBounds((currentBounds) =>
-      containsBounds(currentBounds, nextBounds) ? currentBounds : nextBounds,
+      currentBounds.west === nextBounds.west && currentBounds.east === nextBounds.east &&
+      currentBounds.south === nextBounds.south && currentBounds.north === nextBounds.north
+        ? currentBounds : nextBounds,
     );
   }
 
@@ -990,6 +749,7 @@ function App() {
         // Integer division loses up to `drops - 1` people; hand the remainder
         // out so the count actually placed matches the number on the button.
         let remainder = crowdSize - basePerDrop * drops;
+        const people: PeopleDrop[] = [];
 
         for (let i = 0; i < drops; i++) {
           // sqrt makes the sample uniform over the disc rather than clustered
@@ -1007,13 +767,14 @@ function App() {
           if (remainder > 0) remainder -= 1;
           if (count <= 0) continue;
 
-          addPeople(lat, lon, count, {
+          people.push({ lat, lon, count,
             kind: "crowd",
             duration_minutes: 240,
-          }).catch((err: unknown) => {
-            console.warn("[heatmap] failed to place part of a crowd", err);
           });
         }
+        addPeopleBatch(people).catch((err: unknown) => {
+          console.warn("[heatmap] failed to place crowd", err);
+        });
       }
     };
 
@@ -1024,7 +785,7 @@ function App() {
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
     };
-  }, [isDraggingCrowd, crowdSize, addPeople]);
+  }, [isDraggingCrowd, crowdSize, addPeopleBatch]);
 
   const backendIsPlayingRef = useRef(backendIsPlaying);
   useEffect(() => {
@@ -1115,9 +876,6 @@ function App() {
 
   const [isFirstPaintSettled, setIsFirstPaintSettled] = useState(false);
 
-  const initialBuildingRegionLoaded = Boolean(
-    regionCollections[REGION_LOAD_ORDER[0]] || regionErrors[REGION_LOAD_ORDER[0]],
-  );
   const initialHeatmapStreamLoaded = Boolean(
     heatmapDiagnostics.config &&
       heatmapDiagnostics.confirmedScenarioId &&
@@ -1199,6 +957,18 @@ function App() {
         onMouseMove={handleMapMouseMove}
         onMouseLeave={() => setDemandTooltip(null)}
         onLoad={handleMapLoad}
+        onSourceData={(event) => {
+          if (event.sourceId === 'official-seattle-buildings-downtown-core' && event.isSourceLoaded) {
+            setInitialBuildingRegionLoaded(true);
+          }
+        }}
+        onError={(event) => {
+          console.warn('[map]', event.error);
+          // A failed source must not leave an otherwise usable map behind the loader.
+          if ('sourceId' in event && event.sourceId === 'official-seattle-buildings-downtown-core') {
+            setInitialBuildingRegionLoaded(true);
+          }
+        }}
         onMoveEnd={(event) =>
           updateBuildingsForViewport(event.target as unknown as MapRef)
         }
@@ -1267,12 +1037,12 @@ function App() {
           </div>
         </div>
 
-        {loadedRegions.map(([regionId, collection]) => (
+        {visibleRegions.map(({ id: regionId, url }) => (
           <Source
             key={regionId}
             id={`official-seattle-buildings-${regionId}`}
             type="geojson"
-            data={collection}
+            data={url}
           >
             <Layer
               beforeId="watername_ocean"
@@ -1282,11 +1052,11 @@ function App() {
           </Source>
         ))}
 
-        <DeckGLOverlay
-          interleaved={true}
-          effects={deckEffects}
-          layers={deckLayers}
-        />
+        {isMapLoaded && (
+          <Suspense fallback={null}>
+            <MapOverlays lines={activeLines} playback={playback} showSpaceNeedle={showSpaceNeedle} />
+          </Suspense>
+        )}
 
         {isHeatmapVisible && (
           <>

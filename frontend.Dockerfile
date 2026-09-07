@@ -8,6 +8,7 @@ RUN npm ci
 COPY index.html tsconfig.json tsconfig.app.json tsconfig.node.json vite.config.ts eslint.config.js ./
 COPY src ./src
 COPY public ./public
+COPY scripts ./scripts
 
 RUN npm run build
 
