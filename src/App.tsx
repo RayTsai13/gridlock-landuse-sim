@@ -125,7 +125,7 @@ const BUILDING_REGIONS: BuildingRegion[] = [
     label: "East Neighborhoods",
     url: "/seattle/seattle-buildings-east-neighborhoods.geojson",
     bounds: {
-      west: -122.32,
+      west: -122.326,
       south: 47.585,
       east: -122.255,
       north: 47.676,
@@ -138,7 +138,7 @@ const BUILDING_REGIONS: BuildingRegion[] = [
     bounds: {
       west: -122.43,
       south: 47.6205,
-      east: -122.322,
+      east: -122.338,
       north: 47.69,
     },
   },
@@ -149,7 +149,7 @@ const BUILDING_REGIONS: BuildingRegion[] = [
     bounds: {
       west: -122.432,
       south: 47.543,
-      east: -122.34,
+      east: -122.33,
       north: 47.604,
     },
   },
@@ -158,7 +158,7 @@ const BUILDING_REGIONS: BuildingRegion[] = [
     label: "Beacon Hill",
     url: "/seattle/seattle-buildings-beacon-hill.geojson",
     bounds: {
-      west: -122.3365,
+      west: -122.32,
       south: 47.55,
       east: -122.284,
       north: 47.6015,
@@ -166,7 +166,7 @@ const BUILDING_REGIONS: BuildingRegion[] = [
   },
 ];
 
-const CAMERA_BOUNDARY_PADDING_DEGREES = 0.003;
+const CAMERA_BOUNDARY_PADDING_DEGREES = 0.01;
 
 // ~150 m expressed as degrees of latitude; longitude is scaled by cos(lat)
 // at the drop point so the scatter stays circular on the ground.
@@ -1349,6 +1349,9 @@ function App() {
           </Marker>
         )}
       </Map>
+
+      {/* Vignette overlay to soften edges at camera boundary */}
+      <div className="map-vignette" />
 
       {demandTooltip && (
         <div

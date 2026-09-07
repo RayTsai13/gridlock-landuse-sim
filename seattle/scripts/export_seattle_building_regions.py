@@ -27,7 +27,7 @@ REGIONS = {
         "north": 47.6325,
     },
     "east-neighborhoods": {
-        "west": -122.3200,
+        "west": -122.3260,
         "south": 47.5850,
         "east": -122.2550,
         "north": 47.6760,
@@ -35,17 +35,17 @@ REGIONS = {
     "northwest-seattle": {
         "west": -122.4300,
         "south": 47.6205,
-        "east": -122.3220,
+        "east": -122.3380,
         "north": 47.6900,
     },
     "west-seattle": {
         "west": -122.4320,
         "south": 47.5430,
-        "east": -122.3400,
+        "east": -122.3300,
         "north": 47.6040,
     },
     "beacon-hill": {
-        "west": -122.3365,
+        "west": -122.3200,
         "south": 47.5500,
         "east": -122.2840,
         "north": 47.6015,

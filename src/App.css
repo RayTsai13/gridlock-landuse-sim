@@ -210,6 +210,22 @@
   transform: translateY(0) scale(1);
 }
 
+.map-vignette {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  background: radial-gradient(
+    circle at center,
+    transparent 0%,
+    transparent 75%,
+    rgba(233, 244, 251, 0.6) 100%
+  );
+  z-index: 1;
+}
+
 .map-shell.is-loading .time-controls-wrapper,
 .map-shell.is-loading .demand-tooltip,
 .map-shell.is-loading .offscreen-arrow,

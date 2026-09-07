@@ -10,38 +10,38 @@
   },
   {
     "region": "east-neighborhoods",
-    "features": 34839,
-    "features_with_height": 32961,
+    "features": 38754,
+    "features_with_height": 36681,
     "height_m_min": 1.502,
-    "height_m_max": 94.125,
-    "height_m_avg": 7.199503140074634,
+    "height_m_max": 100.072,
+    "height_m_avg": 7.284241487418554,
     "out_path": "/seattle/seattle-buildings-east-neighborhoods.geojson"
   },
   {
     "region": "northwest-seattle",
-    "features": 58884,
-    "features_with_height": 56127,
+    "features": 48457,
+    "features_with_height": 46152,
     "height_m_min": 1.501,
     "height_m_max": 56.05,
-    "height_m_avg": 6.674531580166408,
+    "height_m_avg": 6.605448496273184,
     "out_path": "/seattle/seattle-buildings-northwest-seattle.geojson"
   },
   {
     "region": "west-seattle",
-    "features": 22615,
-    "features_with_height": 21167,
+    "features": 23521,
+    "features_with_height": 21911,
     "height_m_min": 1.502,
-    "height_m_max": 51.066,
-    "height_m_avg": 6.072654320404403,
+    "height_m_max": 278.433,
+    "height_m_avg": 6.217193829583315,
     "out_path": "/seattle/seattle-buildings-west-seattle.geojson"
   },
   {
     "region": "beacon-hill",
-    "features": 18328,
-    "features_with_height": 16872,
+    "features": 17045,
+    "features_with_height": 15797,
     "height_m_min": 1.51,
-    "height_m_max": 67.011,
-    "height_m_avg": 6.5023528923660505,
+    "height_m_max": 48.98,
+    "height_m_avg": 6.365281572450465,
     "out_path": "/seattle/seattle-buildings-beacon-hill.geojson"
   }
 ]
