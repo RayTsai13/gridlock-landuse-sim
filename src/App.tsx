@@ -17,8 +17,10 @@ import type {
 import "maplibre-gl/dist/maplibre-gl.css";
 import "./App.css";
 import { useHeatmap } from "./heatmap/stream.ts";
-import type { PeopleDrop } from "./heatmap/api.ts";
-import { visibleBuildingRegions } from "./buildings/visibility.ts";
+import { useCrowdDrop } from "./heatmap/useCrowdDrop.ts";
+import { useTimeControls } from './heatmap/useTimeControls.ts';
+import { useDemandInspection } from './heatmap/useDemandInspection.ts';
+import { ModelInfoPanel } from './heatmap/ModelInfoPanel.tsx';
 import { HEATMAP_LAYER_ID, heatmapLayer } from "./heatmap/layer.ts";
 import { useBuiltMass } from "./heatmap/mask.ts";
 import { DEPLOY_STEPS, stopsToGeoJSON, linesToGeoJSON } from "./stops/data.ts";
@@ -58,18 +60,6 @@ type BuildingRegion = {
   bounds: Bounds;
 };
 
-type DemandTooltip = {
-  x: number;
-  y: number;
-  demandIndex: number;
-  density: number;
-  estimatedTripsPerHour: number;
-  pressureLabel: string;
-};
-
-const DEMAND_TOOLTIP_WIDTH = 196;
-const DEMAND_TOOLTIP_HEIGHT = 122;
-const DEMAND_TOOLTIP_MARGIN = 12;
 
 const BUILDING_REGIONS: BuildingRegion[] = [
   {
@@ -133,7 +123,7 @@ const CAMERA_BOUNDARY_PADDING_DEGREES = 0.01;
 
 // ~150 m expressed as degrees of latitude; longitude is scaled by cos(lat)
 // at the drop point so the scatter stays circular on the ground.
-const CROWD_SCATTER_RADIUS_DEG = 150 / 111_320;
+
 
 function mergeBoundsList(boundsList: Bounds[]) {
   const firstBounds = boundsList[0];
@@ -287,38 +277,8 @@ const initialBounds = {
   north: 47.6195,
 };
 
-function clampNumber(value: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, value));
-}
-
-function demandMetricsFromDensity(density: number) {
-  const normalizedDensity = clampNumber(density, 0, 1);
-  const demandIndex = Math.round(normalizedDensity * 100);
-  const estimatedTripsPerHour = Math.round(
-    (45 + Math.pow(normalizedDensity, 1.35) * 4200) / 10,
-  ) * 10;
-
-  let pressureLabel = "Quiet";
-  if (demandIndex >= 82) {
-    pressureLabel = "Severe";
-  } else if (demandIndex >= 64) {
-    pressureLabel = "High";
-  } else if (demandIndex >= 42) {
-    pressureLabel = "Elevated";
-  } else if (demandIndex >= 20) {
-    pressureLabel = "Moderate";
-  }
-
-  return {
-    demandIndex,
-    density: normalizedDensity,
-    estimatedTripsPerHour,
-    pressureLabel,
-  };
-}
-
 function formatDemandNumber(value: number) {
-  return new Intl.NumberFormat("en-US").format(value);
+  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(value);
 }
 
 function App() {
@@ -326,6 +286,10 @@ function App() {
   const builtMass = useBuiltMass();
   const {
     geojson: heatmapData,
+    frame,
+    config,
+    scenarioId,
+    network,
     setScenario,
     playback,
     setPlaying,
@@ -340,32 +304,20 @@ function App() {
   );
 
   // Deploy state: index of the highest deployed step (0 = Line 1 only)
-  const [deployedIndex, setDeployedIndex] = useState(0);
-  const [demandTooltip, setDemandTooltip] = useState<DemandTooltip | null>(
-    null,
-  );
+  const deployedIndex = Math.max(0, DEPLOY_STEPS.findIndex((step) => step.id === scenarioId));
+  const [actionError, setActionError] = useState<string | null>(null);
+  const { demandTooltip, setDemandTooltip, inspectDemand, outline } = useDemandInspection(frame, config);
 
   const [queryBounds, setQueryBounds] = useState(initialBounds);
   const [initialBuildingRegionLoaded, setInitialBuildingRegionLoaded] = useState(false);
   // URLs let MapLibre fetch/parse on its worker; offscreen sources are released.
-  const visibleRegions = useMemo(
-    () => visibleBuildingRegions(BUILDING_REGIONS, queryBounds, initialBuildingRegionLoaded),
-    [queryBounds, initialBuildingRegionLoaded],
-  );
+
   const showSpaceNeedle = containsBounds(queryBounds, {
     west: -122.3493, east: -122.3493, south: 47.6205, north: 47.6205,
   });
 
-  // Time controls
-  const [timeOfDay, setTimeOfDay] = useState(0);
-  const [dayOfWeek, setDayOfWeek] = useState(0);
-  const [hoveredDay, setHoveredDay] = useState<number | null>(null);
-  const hoverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const dialRef = useRef<HTMLDivElement>(null);
-  const selectedTimeRef = useRef(timeOfDay);
-  const selectedDayRef = useRef(dayOfWeek);
-  const [isDraggingDial, setIsDraggingDial] = useState(false);
   const mapRef = useRef<MapRef | null>(null);
+  const { crowdSize, setCrowdSize, isDraggingCrowd, setIsDraggingCrowd, crowdDragPos, setCrowdDragPos } = useCrowdDrop(mapRef, addPeopleBatch, setActionError);
   const [isMapLoaded, setIsMapLoaded] = useState(false);
   const [offscreenArrow, setOffscreenArrow] = useState<{
     x: number;
@@ -392,39 +344,12 @@ function App() {
         window.clearTimeout(handle);
       }
       viewAnimationTimersRef.current = [];
-      if (hoverTimeoutRef.current !== null) {
-        clearTimeout(hoverTimeoutRef.current);
-        hoverTimeoutRef.current = null;
-      }
     },
     [],
   );
 
-  // Crowd drop controls
-  const [crowdSize, setCrowdSize] = useState<number>(5000);
-  const [isDraggingCrowd, setIsDraggingCrowd] = useState(false);
-  const [crowdDragPos, setCrowdDragPos] = useState<{
-    x: number;
-    y: number;
-  } | null>(null);
-
   const backendIsPlaying = playback?.is_playing ?? false;
-
-  useEffect(() => {
-    if (!playback?.sim_time || isDraggingDial) return;
-    queueMicrotask(() => {
-      setDayOfWeek(playback.sim_time.day_of_week);
-      setTimeOfDay(playback.sim_time.time_bin);
-    });
-  }, [playback?.sim_time, isDraggingDial]);
-
-  useEffect(() => {
-    selectedTimeRef.current = timeOfDay;
-  }, [timeOfDay]);
-
-  useEffect(() => {
-    selectedDayRef.current = dayOfWeek;
-  }, [dayOfWeek]);
+  const { timeOfDay, dayOfWeek, setDayOfWeek, hoveredDay, setHoveredDay, hoverTimeoutRef, dialRef, selectedTimeRef, selectedDayRef, setIsDraggingDial, updateTimeFromPointer } = useTimeControls(playback, seekTo);
 
   // ── Compute active stops/lines from deployed steps ──
   const { activeStops, activeLines } = useMemo(() => {
@@ -442,14 +367,19 @@ function App() {
         }
       }
     }
+    if (network) {
+      return {
+        activeStops: network.stops,
+        activeLines: network.lines.map((line) => {
+          const style = DEPLOY_STEPS.find((step) => step.line.id === line.id)?.line;
+          return { ...line, color: style?.color ?? '#777777', offset: style?.offset ?? 0 };
+        }),
+      };
+    }
     return { activeStops: stops, activeLines: lines };
-  }, [deployedIndex]);
+  }, [deployedIndex, network]);
 
-  useEffect(() => {
-    setScenario(DEPLOY_STEPS[deployedIndex].id, activeStops, activeLines).catch((err) => {
-      console.warn("[heatmap] failed to set scenario", err);
-    });
-  }, [activeLines, activeStops, deployedIndex, setScenario]);
+
 
   const stopsGeoJSON = useMemo(
     () => stopsToGeoJSON(activeStops, activeLines),
@@ -619,10 +549,13 @@ function App() {
   };
 
   const deployNextStep = useCallback(() => {
-    setDeployedIndex((current) =>
-      Math.min(current + 1, DEPLOY_STEPS.length - 1),
-    );
-  }, []);
+    if (!nextStep || heatmapDiagnostics.pendingScenarioId) return;
+    const selected = DEPLOY_STEPS.slice(0, deployedIndex + 2);
+    const stops = [...new globalThis.Map(selected.flatMap((step) => step.newStops).map((stop) => [stop.id, stop])).values()];
+    setActionError(null);
+    void setScenario(nextStep.id, stops, selected.map((step) => step.line))
+      .catch((error: Error) => setActionError(error.message));
+  }, [nextStep, heatmapDiagnostics.pendingScenarioId, deployedIndex, setScenario]);
 
   // ── Map click handler — deploy on trigger click ──
   const handleMapClick = useCallback(
@@ -646,146 +579,10 @@ function App() {
         return;
       }
 
-      let hoveredDensity = Number.NaN;
-      for (const feature of e.features ?? []) {
-        if (feature.layer.id !== HEATMAP_LAYER_ID) continue;
-        const density = Number(feature.properties?.density ?? 0);
-        if (density > hoveredDensity || Number.isNaN(hoveredDensity)) {
-          hoveredDensity = density;
-        }
-      }
-
-      if (!Number.isFinite(hoveredDensity)) {
-        setDemandTooltip(null);
-        return;
-      }
-
-      const container = mapRef.current?.getContainer();
-      const width = container?.clientWidth ?? window.innerWidth;
-      const height = container?.clientHeight ?? window.innerHeight;
-      const x = clampNumber(
-        e.point.x + 14,
-        DEMAND_TOOLTIP_MARGIN,
-        width - DEMAND_TOOLTIP_WIDTH - DEMAND_TOOLTIP_MARGIN,
-      );
-      const y = clampNumber(
-        e.point.y - DEMAND_TOOLTIP_HEIGHT - 14,
-        DEMAND_TOOLTIP_MARGIN,
-        height - DEMAND_TOOLTIP_HEIGHT - DEMAND_TOOLTIP_MARGIN,
-      );
-
-      const metrics = demandMetricsFromDensity(hoveredDensity);
-      setDemandTooltip((current) =>
-        current &&
-        current.x === x &&
-        current.y === y &&
-        current.estimatedTripsPerHour === metrics.estimatedTripsPerHour
-          ? current
-          : { x, y, ...metrics },
-      );
+      inspectDemand(e.lngLat.lng, e.lngLat.lat, e.point.x, e.point.y);
     },
-    [isHeatmapVisible],
+    [isHeatmapVisible, inspectDemand, setDemandTooltip],
   );
-
-  // ── Time controls ──
-  const updateTimeFromPointer = useCallback((clientX: number, clientY: number) => {
-    if (!dialRef.current) return selectedTimeRef.current;
-    const rect = dialRef.current.getBoundingClientRect();
-    const cx = rect.left + rect.width / 2;
-    const cy = rect.top + rect.height / 2;
-    const angle = Math.atan2(clientY - cy, clientX - cx);
-    let shiftedAngle = angle + Math.PI / 2;
-    if (shiftedAngle < 0) shiftedAngle += 2 * Math.PI;
-    let newTime = Math.round((shiftedAngle / (2 * Math.PI)) * 1440);
-    newTime = Math.round(newTime / 30) * 30;
-    if (newTime >= 1440) newTime = 0;
-    selectedTimeRef.current = newTime;
-    setTimeOfDay(newTime);
-    return newTime;
-  }, []);
-
-  useEffect(() => {
-    const handlePointerMove = (e: PointerEvent) => {
-      if (!isDraggingDial) return;
-      updateTimeFromPointer(e.clientX, e.clientY);
-    };
-
-    const handlePointerUp = () => {
-      setIsDraggingDial(false);
-      seekTo(selectedDayRef.current, selectedTimeRef.current).catch((err) => {
-        console.warn("[heatmap] failed to seek playback", err);
-      });
-    };
-
-    if (isDraggingDial) {
-      window.addEventListener("pointermove", handlePointerMove);
-      window.addEventListener("pointerup", handlePointerUp);
-    }
-    return () => {
-      window.removeEventListener("pointermove", handlePointerMove);
-      window.removeEventListener("pointerup", handlePointerUp);
-    };
-  }, [isDraggingDial, seekTo, updateTimeFromPointer]);
-
-  // ── Crowd Drop Pointer Events ──
-  useEffect(() => {
-    if (!isDraggingCrowd) return;
-
-    const handlePointerMove = (e: PointerEvent) => {
-      setCrowdDragPos({ x: e.clientX, y: e.clientY });
-    };
-
-    const handlePointerUp = (e: PointerEvent) => {
-      setIsDraggingCrowd(false);
-      setCrowdDragPos(null);
-
-      if (mapRef.current) {
-        const dropPoint = [e.clientX, e.clientY] as [number, number];
-        const lngLat = mapRef.current.unproject(dropPoint);
-
-        // Scatter the crowd into 12 clusters inside a ~150 m circle.
-        const drops = 12;
-        const basePerDrop = Math.floor(crowdSize / drops);
-        // Integer division loses up to `drops - 1` people; hand the remainder
-        // out so the count actually placed matches the number on the button.
-        let remainder = crowdSize - basePerDrop * drops;
-        const people: PeopleDrop[] = [];
-
-        for (let i = 0; i < drops; i++) {
-          // sqrt makes the sample uniform over the disc rather than clustered
-          // at the center, and the longitude offset is divided by cos(lat) so
-          // the footprint is a circle rather than a 1.5:1 ellipse at 47.6 N.
-          const radius = CROWD_SCATTER_RADIUS_DEG * Math.sqrt(Math.random());
-          const theta = Math.random() * 2 * Math.PI;
-          const lat = lngLat.lat + radius * Math.sin(theta);
-          const lon =
-            lngLat.lng +
-            (radius * Math.cos(theta)) /
-              Math.max(0.01, Math.cos((lngLat.lat * Math.PI) / 180));
-
-          const count = basePerDrop + (remainder > 0 ? 1 : 0);
-          if (remainder > 0) remainder -= 1;
-          if (count <= 0) continue;
-
-          people.push({ lat, lon, count,
-            kind: "crowd",
-            duration_minutes: 240,
-          });
-        }
-        addPeopleBatch(people).catch((err: unknown) => {
-          console.warn("[heatmap] failed to place crowd", err);
-        });
-      }
-    };
-
-    window.addEventListener("pointermove", handlePointerMove);
-    window.addEventListener("pointerup", handlePointerUp);
-
-    return () => {
-      window.removeEventListener("pointermove", handlePointerMove);
-      window.removeEventListener("pointerup", handlePointerUp);
-    };
-  }, [isDraggingCrowd, crowdSize, addPeopleBatch]);
 
   const backendIsPlayingRef = useRef(backendIsPlaying);
   useEffect(() => {
@@ -947,9 +744,11 @@ function App() {
 
   return (
     <div className={`map-shell ${isAppReady ? "is-ready" : "is-loading"}`}>
+      <ModelInfoPanel model={frame?.model} error={actionError ?? heatmapDiagnostics.lastError} />
       <Map
         ref={mapRef}
         initialViewState={initialViewState}
+        transformRequest={(url) => ({ url: new URL(url, window.location.origin).href })}
         mapStyle="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
         style={{ width: "100vw", height: "100vh" }}
         onClick={handleMapClick}
@@ -958,14 +757,14 @@ function App() {
         onMouseLeave={() => setDemandTooltip(null)}
         onLoad={handleMapLoad}
         onSourceData={(event) => {
-          if (event.sourceId === 'official-seattle-buildings-downtown-core' && event.isSourceLoaded) {
+          if (event.sourceId === 'seattle-buildings' && event.isSourceLoaded) {
             setInitialBuildingRegionLoaded(true);
           }
         }}
         onError={(event) => {
           console.warn('[map]', event.error);
           // A failed source must not leave an otherwise usable map behind the loader.
-          if ('sourceId' in event && event.sourceId === 'official-seattle-buildings-downtown-core') {
+          if ('sourceId' in event && event.sourceId === 'seattle-buildings') {
             setInitialBuildingRegionLoaded(true);
           }
         }}
@@ -1037,20 +836,14 @@ function App() {
           </div>
         </div>
 
-        {visibleRegions.map(({ id: regionId, url }) => (
-          <Source
-            key={regionId}
-            id={`official-seattle-buildings-${regionId}`}
-            type="geojson"
-            data={url}
-          >
-            <Layer
-              beforeId="watername_ocean"
-              {...buildingFillLayer}
-              id={`official-seattle-buildings-fill-${regionId}`}
-            />
+        <Source id="seattle-buildings" type="vector" url="/seattle/buildings/tilejson.json">
+          <Layer beforeId="watername_ocean" {...buildingFillLayer} source-layer="buildings" />
+        </Source>
+        {isHeatmapVisible && outline && (
+          <Source id="demand-cell" type="geojson" data={outline}>
+            <Layer id="demand-cell-outline" type="line" paint={{ 'line-color': '#163b66', 'line-width': 2 }} />
           </Source>
-        ))}
+        )}
 
         {isMapLoaded && (
           <Suspense fallback={null}>
@@ -1143,12 +936,13 @@ function App() {
             <span style={{ width: `${demandTooltip.demandIndex}%` }} />
           </div>
           <div className="demand-tooltip-grid">
-            <span>Est. trips/hr</span>
+            <span>Modeled unmet trips/hour</span>
             <strong>
-              {formatDemandNumber(demandTooltip.estimatedTripsPerHour)}
+              {formatDemandNumber(demandTooltip.unmet)}
             </strong>
-            <span>Density</span>
-            <strong>{demandTooltip.density.toFixed(2)}</strong>
+            <span>Generated / served</span>
+            <strong>{formatDemandNumber(demandTooltip.generated)} / {formatDemandNumber(demandTooltip.served)}</strong>
+            <span>Cell totals · pressure index</span>
           </div>
         </div>
       )}

@@ -51,3 +51,38 @@ For future profiling, record cold-cache startup and long tasks, pan downtown to
 West Seattle and back, toggle the landmark and heatmap, compare 60/120 Hz displays,
 and measure memory at citywide zoom. Preserve shared producer semantics when
 scaling the backend; multiple independent uvicorn workers are not a safe shortcut.
+
+## October 2026 measured comparison
+
+The unchanged `be7153e` baseline and the updated source were exercised with
+`scripts/profile-map.mjs`, Chromium 156.0.8078.4, a 1280×800 viewport, 2× CPU
+throttling, 20 Mbps download/30 ms latency, and the same deterministic empty basemap.
+Both runs used development builds. The fixture removes external basemap variability;
+these timings do not predict production startup or GPU frame rate.
+
+| Measurement | Baseline | Updated |
+| --- | ---: | ---: |
+| Application ready | 24.30 s | 2.92 s |
+| Startup building response bytes, decoded | 29.80 MB | 0.32 MB |
+| Page JS heap after startup GC | 85.12 MB | 15.19 MB |
+| Page JS heap after pan/zoom/return GC | 122.72 MB | 18.09 MB |
+
+Page heap excludes MapLibre workers and GPU memory. Decoded response bytes are not
+compressed transfer sizes. The pan/zoom gesture sequence is reproducible but is
+not a complete device benchmark. Screenshots preserve the building appearance.
+Decoding all maximum-zoom tiles confirmed all 123,623 source OBJECTIDs and heights,
+with zero missing identifiers or height mismatches.
+
+Raw reports and Playwright traces are in local `test-results/profile-baseline/`
+and `test-results/profile-current/`; the numerical reports are also recorded in
+`performance-2026-10.json`. Reproduce with a baseline checkout whose Vite proxy
+targets port 8010, then run the two commands sequentially:
+
+```bash
+node scripts/profile-map.mjs /path/to/baseline 8010 5180 baseline
+node scripts/profile-map.mjs . 8000 5181 current
+```
+
+Both commands manage disposable backend/frontend servers and close them on exit.
+Install Playwright Chromium first and set `PYTHON` if needed. Existing production
+asset budgets still apply; tile budgets are now included.

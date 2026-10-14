@@ -1033,3 +1033,12 @@
   outline: 2px solid rgba(24, 50, 75, 0.55);
   outline-offset: 2px;
 }
+
+.model-info { position: absolute; z-index: 20; left: 16px; top: 16px; width: min(320px, 70vw); padding: 10px; border-radius: 10px; background: #fffffff0; color: #163b66; font-size: 12px; max-height: 45vh; overflow: auto; }
+.model-info summary { cursor: pointer; }
+.model-info p { margin: 8px 0; }
+.demand-tooltip { width: 260px; }
+
+.session-notice { position: fixed; top: 16px; left: 16px; z-index: 100; background: white; color: #163b66; padding: 12px; max-width: 360px; border-radius: 10px; }
+
+.heatmap-debug-panel { top: 72px; }

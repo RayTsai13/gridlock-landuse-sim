@@ -767,6 +767,8 @@ def build_artifact(
             )
 
     return {
+        "version": 1,
+        "paths": {config.line_id: track_paths[config.path_name] for config in LINE_CONFIGS},
         "metadata": {
             "generatedAt": datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
             "sourceFeedUrl": FEED_URL,

@@ -3,7 +3,7 @@ import type { PlaybackState } from '../heatmap/api.ts';
 import type { TransitLine } from './data.ts';
 import type { LonLat } from './track_geometry.ts';
 import {
-  TRAIN_SERVICE_ARTIFACT,
+  type TrainServiceArtifact,
   type TrainDayType,
   type TrainDirectionProfile,
   type TrainLineProfile,
@@ -20,7 +20,7 @@ export type TrainInstance = {
 
 const MINUTES_PER_DAY = 24 * 60;
 const MINUTES_PER_WEEK = 7 * MINUTES_PER_DAY;
-const DEFAULT_DWELL_MINUTES = TRAIN_SERVICE_ARTIFACT.metadata.defaultDwellSeconds / 60;
+let defaultDwellMinutes = 20 / 60;
 const TERMINAL_LOOKBACK_BUFFER_MINUTES = 2;
 const TRAIN_OFFSET_METERS_PER_OFFSET_UNIT = 3;
 // Fallback only, for the moments before the first playback event arrives.
@@ -29,12 +29,15 @@ const TRAIN_OFFSET_METERS_PER_OFFSET_UNIT = 3;
 const FALLBACK_VISUAL_MINUTES_PER_SECOND = 30;
 const PLAYBACK_RESYNC_THRESHOLD_MINUTES = 30;
 
-const profileIndex = new Map<string, TrainLineProfile>(
-  TRAIN_SERVICE_ARTIFACT.lineProfiles.map((profile) => [
-    `${profile.lineId}:${profile.dayType}`,
-    profile,
-  ]),
-);
+let profileIndex = new Map<string, TrainLineProfile>();
+
+export function configureTrainService(artifact: TrainServiceArtifact) {
+  if (artifact.version !== 1 || artifact.lineProfiles.length !== 9) throw new Error('Invalid train-service artifact');
+  defaultDwellMinutes = artifact.metadata.defaultDwellSeconds / 60;
+  profileIndex = new Map(artifact.lineProfiles.map((profile) => [
+    `${profile.lineId}:${profile.dayType}`, profile,
+  ]));
+}
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
@@ -90,7 +93,7 @@ function hexToRgb(hex: string): [number, number, number] {
 function totalVisibleRuntimeMinutes(directionProfile: TrainDirectionProfile) {
   return (
     directionProfile.tripRuntimeMinutes +
-    DEFAULT_DWELL_MINUTES * Math.max(0, directionProfile.stopIds.length - 2)
+    defaultDwellMinutes * Math.max(0, directionProfile.stopIds.length - 2)
   );
 }
 
@@ -113,10 +116,10 @@ function distanceForElapsedMinutes(
     remaining -= travelMinutes;
 
     if (index < segmentRuntimes.length - 1) {
-      if (remaining <= DEFAULT_DWELL_MINUTES) {
+      if (remaining <= defaultDwellMinutes) {
         return stopDistances[index + 1];
       }
-      remaining -= DEFAULT_DWELL_MINUTES;
+      remaining -= defaultDwellMinutes;
     }
   }
 

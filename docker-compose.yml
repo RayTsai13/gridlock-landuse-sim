@@ -1,6 +1,6 @@
 services:
   frontend:
-    image: yourdockerhubuser/gridlock-frontend:latest
+    image: gridlock-frontend:${GRIDLOCK_TAG:-local}
     build:
       context: .
       dockerfile: frontend.Dockerfile
@@ -9,9 +9,17 @@ services:
     expose:
       - "80"
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
 
   backend:
-    image: yourdockerhubuser/gridlock-backend:latest
+    environment:
+      SESSION_TTL_SECONDS: ${SESSION_TTL_SECONDS:-1800}
+      SESSION_LIMIT: ${SESSION_LIMIT:-100}
+    image: gridlock-backend:${GRIDLOCK_TAG:-local}
     build:
       context: .
       dockerfile: backend.Dockerfile
@@ -32,6 +40,8 @@ services:
       start_period: 10s
 
   caddy:
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
     image: caddy:2-alpine
     restart: unless-stopped
     ports:

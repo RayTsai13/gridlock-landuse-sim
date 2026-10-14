@@ -4,7 +4,7 @@ This directory contains build-time data utilities for GTFS, census, station-vect
 
 The former model-training and scoring code has been removed. Some builders still produce tables named `*_training_features.csv` or scenario candidate features; these are research inputs only, and this repository does not currently train or load a model from them.
 
-One exception to the runtime separation is code generation: `scripts/build_train_service_profiles.py` intentionally writes the generated frontend module `../src/stops/train_service.ts`.
+One exception to the runtime separation is code generation: `scripts/build_train_service_profiles.py` intentionally writes the shared frontend/backend JSON artifact `../public/seattle/train-service.json`.
 
 ## Setup
 
@@ -168,7 +168,7 @@ Download the official Sound Transit rail GTFS archive as `curr_data/raw/40_gtfs.
   --rail-gtfs-zip curr_data/raw/40_gtfs.zip
 ```
 
-The script combines GTFS schedules with `../src/stops/track_geometry.ts` and overwrites the generated `../src/stops/train_service.ts`. Review the source-feed metadata and run the frontend train tests after regeneration.
+The script combines GTFS schedules with `../src/stops/track_geometry.ts` and overwrites the generated `../public/seattle/train-service.json`. Review the source-feed metadata and run the frontend train tests after regeneration.
 
 ## Main outputs
 
@@ -181,7 +181,7 @@ The script combines GTFS schedules with `../src/stops/track_geometry.ts` and ove
 | `seattle_station_vectors.csv` | `build_station_vectors` |
 | `seattle_heatmap_features.csv`, `seattle_heatmap_grid.geojson` | `build_heatmap_dataset` |
 | `city_heatmap_candidate_features.csv`, `heatmap_timelapse_grid.geojson` | `build_heatmap_candidates` |
-| `../src/stops/train_service.ts` | `build_train_service_profiles.py` |
+| `../public/seattle/train-service.json` | `build_train_service_profiles.py` |
 
 Unless overridden, feature CSV/GeoJSON outputs are written below `curr_data/processed/features/` by `scripts/build_features.py`.
 

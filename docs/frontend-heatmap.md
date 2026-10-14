@@ -1,3 +1,7 @@
+# October 2026 integration update
+
+Initialize `POST /api/session` before mounting the consumer. Scenario events carry the confirmed network; do not post a default scenario on mount. Tooltip metrics come from `cell_metrics`, not interpolated display density. See [the current session and frame additions](implementation-2026-10.md).
+
 # Frontend Heatmap Implementation
 
 How the frontend consumes the heatmap data stream and renders it on the map.

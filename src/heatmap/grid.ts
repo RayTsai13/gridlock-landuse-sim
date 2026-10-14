@@ -17,7 +17,20 @@ export type GridConfig = {
 /** [row, col, density] tuple from the SSE frame */
 export type CellTuple = [row: number, col: number, density: number];
 
+export type CellMetrics = [row: number, col: number, generated: number, served: number, unmet: number];
+
+export type ModelInfo = {
+  synthetic: boolean;
+  sourceFeedEndDate?: string;
+  sourceFeedVersion?: string;
+  effectiveTripsPerDeparture?: number;
+  walkRadiusMeters?: number;
+};
+
 export type Frame = {
+  cell_metrics?: CellMetrics[];
+  totals?: { generated: number; served: number; unmet: number };
+  model?: ModelInfo;
   timestamp: number;
   state_version?: string;
   sim_time?: SimTime;

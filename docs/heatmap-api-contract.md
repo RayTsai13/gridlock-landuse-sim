@@ -1,3 +1,7 @@
+# Session and metrics update (October 2026)
+
+Clients must first `POST /api/session` and retain its HttpOnly cookie for all API calls and SSE. Missing/expired sessions return 401; full capacity returns 503. Scenario events/responses now include `stops` and `lines`. Frames additionally contain `cell_metrics`, `totals`, and `model`. See [the current additive contract and lifecycle](implementation-2026-10.md) for tuple units and reset behavior. The mock implements the same session surface with explicitly synthetic metrics.
+
 # Heatmap Data API Contract
 
 ## Overview

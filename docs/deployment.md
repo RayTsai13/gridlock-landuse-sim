@@ -5,7 +5,36 @@ Gridlock is deployed from
 to a DigitalOcean droplet. GitHub Actions runs the test suite and then connects
 to the droplet over SSH to rebuild and restart the Docker Compose application.
 
-## Current production target
+## Updated deployment behavior
+
+The workflow deploys the exact SHA that passed CI, serializes production releases,
+builds revision-tagged images, waits for container health, and verifies the public
+frontend, health endpoint and session-cookie API through the proxy. The prior
+Compose configuration and images are retained under `.deploy/` and tagged
+`gridlock-frontend:rollback` / `gridlock-backend:rollback`; a failed rollout
+restores the previous revision and images. There is no pruning in this path.
+The script requires an existing running deployment for rollback images.
+
+Configure `SITE_ADDRESS=your-domain.example` in the droplet's untracked `.env`
+after DNS points at the droplet and ports 80/443 are reachable. Caddy then obtains
+a certificate. `SITE_ADDRESS=:80` remains the local/IP HTTP default. Production
+domain activation has not been performed by these code changes. Nginx preserves
+Caddy's forwarded scheme so HTTPS sessions receive Secure cookies.
+
+Run one worker. Sessions are temporary and restart on deploy; the browser displays
+a reset notice. `/healthz` includes aggregate session/subscriber counts, service
+metadata, and the sum of the last per-session composition durations in seconds.
+Never expose the backend port directly when trusting proxy headers.
+
+Manual rollback from `/home/deploy/Gridlock`:
+
+```bash
+previous=$(cat .deploy/previous)
+git reset --hard "$previous"
+docker compose --project-directory "$PWD" -f .deploy/rollback-compose.yml -f .deploy/rollback-images.yml up -d --no-build --wait --wait-timeout 120
+```
+
+## Previous production target record
 
 | Setting | Value |
 | --- | --- |
@@ -26,7 +55,7 @@ The production app is currently addressed by the droplet's IPv4 address. The
 address is deliberately not recorded here; DigitalOcean and the
 `DROPLET_HOST` Actions secret are the sources of truth.
 
-## Deployment flow
+## Previous deployment flow (historical)
 
 `.github/workflows/deploy.yml` runs on every push to `main` and can also be
 started manually. It:
@@ -149,7 +178,7 @@ The application itself has no database or persistent user-data volume. Caddy's
 named volumes hold proxy state, but the current IP-address/HTTP configuration
 does not contain irreplaceable application data.
 
-## Current limitations
+## Previous deployment limitations (addressed by October changes)
 
 - `ci.yml` runs independently on pushes to `main`, while `deploy.yml` calls it
   again, so a main-branch push currently runs CI twice.
@@ -163,3 +192,18 @@ does not contain irreplaceable application data.
 
 These limitations do not prevent deployment, but they should be addressed
 before relying on the service for production traffic.
+
+## Local container validation
+
+`docker compose build` and `bash scripts/container-smoke.sh` use a disposable
+`gridlock-smoke` project on port 8088, then remove its containers and network.
+`bash scripts/container-smoke.sh https` additionally checks HTTPS on port 8448
+using Caddy's localhost certificate. The local self-signed certificate is accepted
+only by this smoke client; public-domain TLS verification is never disabled in
+the deployment script. Both modes check session cookies, same-origin mutations,
+stream handshake/paused heartbeat, compressed tile headers, and nginx syntax.
+
+Rollback control flow is tested with mocked commands in
+`backend/tests/test_deploy.py` for successful release, failed image build and
+failed post-start verification. No production deployment or production rollback
+has been performed as part of local validation.

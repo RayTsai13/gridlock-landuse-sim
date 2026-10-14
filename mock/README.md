@@ -1,6 +1,6 @@
 # Mock server
 
-`mock/server.py` is a synthetic FastAPI server for frontend development. It generates moving Seattle-shaped hotspots over a `57 × 36` grid and needs no GeoJSON or data-pipeline artifacts.
+`mock/server.py` is a synthetic FastAPI server for frontend development. It generates moving Seattle-shaped hotspots over a `57 × 36` grid and needs no grid GeoJSON. It uses the checked-in shared service JSON for network geometry/validation; density and metrics remain explicitly synthetic.
 
 It implements the same frontend-facing scenario, playback, people, and SSE behavior as the real backend. `/healthz` is specific to the production backend and is not provided here. See [`../docs/heatmap-api-contract.md`](../docs/heatmap-api-contract.md).
 
@@ -28,7 +28,8 @@ Only one service can bind port 8000 at a time, so stop the real backend before s
 - A simple coastline mask keeps generated activity off major water areas.
 - Crowd drops add short-lived local density.
 - Playback and SSE handshakes mirror the real server.
-- A single lifespan ticker produces shared frames; connections do not advance the clock themselves.
+- Private temporary browser sessions match the real server; initialize `POST /api/session` first.
+- A single lifespan ticker produces frames shared within each session; connections do not advance the clock themselves.
 
 Endpoint parity is enforced by `backend/tests/test_server_parity.py`:
 
@@ -37,4 +38,3 @@ python3 -m pytest backend/tests/test_server_parity.py
 ```
 
 When the frontend-facing wire contract changes, update the real server, this mock, the TypeScript client, tests, and contract document together.
-

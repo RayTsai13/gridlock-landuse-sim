@@ -18,6 +18,8 @@ from typing import Any
 
 from .geo import haversine_m
 from .grid import Grid
+from .sim_time import SimTime
+from .service import load_service, departures_by_stop, EFFECTIVE_TRIPS_PER_DEPARTURE
 from .landuse import CellCenter, cell_centers
 
 
@@ -264,6 +266,10 @@ class ServiceCapacity:
     ) -> None:
         self.grid = grid
         self.network = network
+        artifact = load_service()
+        self.metadata = {**artifact['metadata'], 'artifactVersion': artifact['version'],
+                         'effectiveTripsPerDeparture': EFFECTIVE_TRIPS_PER_DEPARTURE,
+                         'walkRadiusMeters': WALK_RADIUS_M}
         # Cell centers are expensive to build and identical for a given grid,
         # so callers that already hold them (``State``) pass theirs in.
         self.centers = cell_centers(grid) if centers is None else centers
@@ -289,16 +295,25 @@ class ServiceCapacity:
     def line_count_by_stop_id(self) -> dict[str, int]:
         return dict(self._line_count_by_stop_id)
 
-    def allocate(self, demand: list[float]) -> list[float]:
+    def allocate(self, demand: list[float], *, sim_time: SimTime | None = None) -> list[float]:
         """Trips/hour served in each cell.
 
         Each stop distributes its capacity across its walkshed in proportion to
         the demand still unserved there, so a cell is never served more trips
         than it generates, and a cell reached by two stops draws on both.
         """
+        capacities = self.capacity_by_stop_id
+        if sim_time is not None:
+            departures = departures_by_stop(sim_time.minute_of_week)
+            capacities = {
+                stop.id: EFFECTIVE_TRIPS_PER_DEPARTURE * sum(
+                    departures.get((line.id, stop.id), 0)
+                    for line in self.network.lines if stop.id in line.stop_ids
+                ) for stop in self.network.stops
+            }
         served = [0.0] * len(demand)
         for stop in self.network.stops:
-            capacity = self.capacity_by_stop_id.get(stop.id, 0.0)
+            capacity = capacities.get(stop.id, 0.0)
             walkshed = self.walkshed_by_stop_id.get(stop.id, ())
             if capacity <= 0.0 or not walkshed:
                 continue
@@ -354,12 +369,10 @@ def _line_from_stop_ids(
     stop_ids: list[str],
     stops: list[TransitStop],
 ) -> TransitLine:
-    stop_by_id = {stop.id: stop for stop in stops}
-    path = tuple(
-        (stop_by_id[stop_id].lon, stop_by_id[stop_id].lat)
-        for stop_id in stop_ids
-        if stop_id in stop_by_id
-    )
+    known_ids = {stop.id for stop in stops}
+    if not set(stop_ids) <= known_ids:
+        raise ValueError("Unknown stop in built-in network")
+    path = tuple(tuple(point) for point in load_service()['paths'][line_id])
     return TransitLine(id=line_id, name=name, stop_ids=tuple(stop_ids), path=path)
 
 

@@ -61,3 +61,7 @@ __pycache__/
 .ruff_cache/
 .mypy_cache/
 *.egg-info/
+
+.deploy/
+playwright-report/
+test-results/

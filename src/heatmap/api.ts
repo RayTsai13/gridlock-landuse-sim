@@ -1,5 +1,17 @@
 import type { Frame } from './grid.ts';
 
+import { ensureSession } from './session.ts';
+
+async function sessionFetch(input: RequestInfo | URL, init?: RequestInit) {
+  const response = await fetch(input, init);
+  if (response.status === 401) {
+    await ensureSession();
+    window.dispatchEvent(new Event('simulation-reset'));
+    throw new Error('Your simulation expired and was reset. Please repeat the action.');
+  }
+  return response;
+}
+
 const BASE_URL = '/api';
 
 export type PlacedPerson = {
@@ -18,7 +30,7 @@ export type PeopleOptions = {
 export type PeopleDrop = PeopleOptions & { lat: number; lon: number; count: number };
 
 export async function postPeopleBatch(people: PeopleDrop[]): Promise<PlacedPerson[]> {
-  const res = await fetch(`${BASE_URL}/people/batch`, {
+  const res = await sessionFetch(`${BASE_URL}/people/batch`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ people }),
@@ -42,6 +54,8 @@ export type ScenarioLine = {
 
 export type ScenarioResponse = {
   scenario_id: string;
+  stops?: ScenarioStop[];
+  lines?: ScenarioLine[];
   frame?: Frame;
 };
 
@@ -66,7 +80,7 @@ export async function postScenario(
   stops: ScenarioStop[] = [],
   lines: ScenarioLine[] = [],
 ): Promise<ScenarioResponse> {
-  const res = await fetch(`${BASE_URL}/scenario`, {
+  const res = await sessionFetch(`${BASE_URL}/scenario`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ scenario_id: scenarioId, stops, lines }),
@@ -83,7 +97,7 @@ export async function postPeople(
   count = 1,
   options: PeopleOptions = {},
 ): Promise<PlacedPerson> {
-  const res = await fetch(`${BASE_URL}/people`, {
+  const res = await sessionFetch(`${BASE_URL}/people`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ lat, lon, count, ...options }),
@@ -97,7 +111,7 @@ export async function postPeople(
 export async function postPlayback(
   updates: Partial<Pick<PlaybackState, 'is_playing' | 'sim_minutes_per_second'>>,
 ): Promise<PlaybackState> {
-  const res = await fetch(`${BASE_URL}/playback`, {
+  const res = await sessionFetch(`${BASE_URL}/playback`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(updates),
@@ -109,7 +123,7 @@ export async function postPlayback(
 }
 
 export async function seekPlayback(dayOfWeek: number, timeBin: number): Promise<PlaybackState> {
-  const res = await fetch(`${BASE_URL}/playback/seek`, {
+  const res = await sessionFetch(`${BASE_URL}/playback/seek`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ day_of_week: dayOfWeek, time_bin: timeBin }),
@@ -121,14 +135,14 @@ export async function seekPlayback(dayOfWeek: number, timeBin: number): Promise<
 }
 
 export async function deletePerson(id: string): Promise<void> {
-  const res = await fetch(`${BASE_URL}/people/${id}`, { method: 'DELETE' });
+  const res = await sessionFetch(`${BASE_URL}/people/${id}`, { method: 'DELETE' });
   if (!res.ok) {
     throw new Error(`DELETE /api/people/${id} failed: ${res.status}`);
   }
 }
 
 export async function deleteAllPeople(): Promise<void> {
-  const res = await fetch(`${BASE_URL}/people`, { method: 'DELETE' });
+  const res = await sessionFetch(`${BASE_URL}/people`, { method: 'DELETE' });
   if (!res.ok) {
     throw new Error(`DELETE /api/people failed: ${res.status}`);
   }

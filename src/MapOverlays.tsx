@@ -1,5 +1,6 @@
 import {
   synthesizeTrainInstances,
+  configureTrainService,
   type TrainInstance,
   useInterpolatedMinuteOfWeek,
 } from "./stops/trains.ts";
@@ -9,6 +10,7 @@ import { AmbientLight, DirectionalLight, LightingEffect } from '@deck.gl/core';
 import { ScatterplotLayer } from '@deck.gl/layers';
 import { DeckGLOverlay } from './DeckGLOverlay.tsx';
 import type { TransitLine } from './stops/data.ts';
+import type { TrainServiceArtifact } from './stops/train_service.ts';
 import type { PlaybackState } from './heatmap/api.ts';
 
 // Only this subtree updates at animation cadence.
@@ -17,6 +19,18 @@ export default memo(function MapOverlays({ lines: activeLines, playback, showSpa
   playback: PlaybackState | null;
   showSpaceNeedle: boolean;
 }) {
+  const [serviceReady, setServiceReady] = useState(false);
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch('/seattle/train-service.json', { signal: controller.signal })
+      .then((response) => {
+        if (!response.ok) throw new Error('Train schedules unavailable');
+        return response.json() as Promise<TrainServiceArtifact>;
+      })
+      .then((artifact) => { configureTrainService(artifact); setServiceReady(true); })
+      .catch((error: unknown) => { if (!controller.signal.aborted) console.warn('[service]', error); });
+    return () => controller.abort();
+  }, []);
   const interpolatedMinuteOfWeek = useInterpolatedMinuteOfWeek(activeLines.length ? playback : null);
   const deckEffects = useMemo(() => [new LightingEffect({
     ambientLight: new AmbientLight({color: [255, 255, 255], intensity: 10}),
@@ -38,8 +52,8 @@ export default memo(function MapOverlays({ lines: activeLines, playback, showSpa
     [showSpaceNeedle, createLandmark],
   );
   const trainInstances = useMemo(
-    () => synthesizeTrainInstances(activeLines, interpolatedMinuteOfWeek),
-    [activeLines, interpolatedMinuteOfWeek],
+    () => serviceReady ? synthesizeTrainInstances(activeLines, interpolatedMinuteOfWeek) : [],
+    [activeLines, interpolatedMinuteOfWeek, serviceReady],
   );
   const deckLayers = useMemo(
     () => [

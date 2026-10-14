@@ -6,6 +6,8 @@ Gridlock is an interactive Seattle transit-demand simulator. A React/TypeScript 
 
 The simulation is analytical rather than machine-learned at runtime: land-use populations generate trips, active transit stops absorb capacity, and the remaining trips are rendered as demand pressure.
 
+See [October implementation notes](docs/implementation-2026-10.md) for private temporary sessions, schedule-aware capacity, exact cell metrics, tiled buildings, and validation commands.
+
 ## Quick start
 
 Requirements:
@@ -47,7 +49,7 @@ For frontend-only work, the synthetic server implements the same frontend-facing
 npm run mock:server
 ```
 
-Do not run the real backend with multiple workers. Its simulation state and frame producer are process-global, so multiple workers create independent timelines.
+Do not run the real backend with multiple workers. Its temporary session registry and frame producer live in one process, so multiple workers cannot safely share sessions.
 
 ## What is in the repository
 
@@ -103,7 +105,7 @@ docker compose ps
 curl http://127.0.0.1/healthz
 ```
 
-The image names in `docker-compose.yml` are placeholders for local builds. The current `Caddyfile` serves plain HTTP on `:80`; publishing port 443 does not enable HTTPS without a configured site address.
+Image tags use `GRIDLOCK_TAG` (default `local`). Set `SITE_ADDRESS` to a domain pointing at the droplet to enable Caddy HTTPS; the default `:80` retains local HTTP.
 
 Production is deployed from `RayTsai13/gridlock-landuse-sim` to the
 DigitalOcean droplet `gridlock-prod` through GitHub Actions. See the

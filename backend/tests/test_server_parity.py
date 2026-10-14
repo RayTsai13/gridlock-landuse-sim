@@ -35,8 +35,13 @@ def impl(request: pytest.FixtureRequest):
 
 
 @pytest.fixture
-def client(impl) -> Iterator[TestClient]:
+def client(impl, monkeypatch) -> Iterator[TestClient]:
+    impl.SESSIONS.sessions.clear()
+    monkeypatch.setattr(impl.SESSIONS, "factory", lambda: impl.STATE)
+    if impl is mock_server:
+        impl.STATE.playback = impl.PLAYBACK
     with TestClient(impl.app) as test_client:
+        test_client.post('/api/session')
         yield test_client
 
 
@@ -135,7 +140,7 @@ async def test_frame_payload_shape_and_bounds(impl) -> None:
     config = events[0]["data"]
     frame = events[3]["data"]
 
-    assert set(frame) == {"timestamp", "state_version", "sim_time", "cells"}
+    assert set(frame) == {"timestamp", "state_version", "sim_time", "cells", "cell_metrics", "totals", "model"}
     assert isinstance(frame["timestamp"], (int, float))
     assert frame["state_version"].startswith("state_v")
     assert set(frame["sim_time"]) == {"day_of_week", "time_bin", "minute_of_week"}
@@ -193,7 +198,7 @@ def test_post_scenario_tolerates_extra_keys(client) -> None:
             "scenario_id": "line-1-2",
             "stops": [
                 {
-                    "id": "a",
+                    "id": "westlake",
                     "name": "A",
                     "coordinates": [-122.33, 47.60],
                     "color": "#ff0000",
@@ -201,9 +206,9 @@ def test_post_scenario_tolerates_extra_keys(client) -> None:
             ],
             "lines": [
                 {
-                    "id": "l",
+                    "id": "link-1-line",
                     "name": "L",
-                    "stopIds": ["a"],
+                    "stopIds": ["westlake"],
                     "path": [[-122.33, 47.60], [-122.34, 47.61]],
                     "offset": 2,
                 }

@@ -27,3 +27,5 @@ The long documents in `data_processing/` named `ARCHITECTURE.md`, `DEMAND_PIPELI
 - Keep runnable commands relative to the directory explicitly named above the code block.
 - Mark generated artifacts and historical plans clearly.
 - Update documentation in the same change as its corresponding code or contract.
+
+- [October 2026 sessions, model metrics, service data, tiles, and tests](implementation-2026-10.md)

@@ -4,6 +4,8 @@ This directory contains the real Gridlock simulation and its FastAPI HTTP/SSE in
 
 For exact request and response shapes, see [`../docs/heatmap-api-contract.md`](../docs/heatmap-api-contract.md).
 
+See [current session, metric, and schedule interfaces](../docs/implementation-2026-10.md). Each browser initializes `POST /api/session`; mutable state is isolated per browser session. Capacity counts scheduled departures rather than using a constant stop throughput.
+
 ## Run locally
 
 From the repository root:
@@ -71,7 +73,7 @@ where the city is.
 
 ## Runtime invariants
 
-- Run one worker only. `STATE` is process-global; `uvicorn --workers N` creates N unrelated simulations.
+- Run one worker only. the session registry is process-local; `uvicorn --workers N` cannot share sessions.
 - The lifespan ticker is the only frame producer and the only place normal playback advances. SSE connection generators are readers.
 - The ticker holds the clock when no subscribers are connected.
 - `State.current_frame()` is cached, so every connection sees the same snapshot for a state version.
@@ -100,4 +102,3 @@ unmet demand, and if the scale does not follow, downtown pins at 1.0 and crowd
 drops there stop being visible.
 
 Playback speeds are quantized to whole simulated minutes per frame because `minute_of_week` is an integer in the wire contract.
-

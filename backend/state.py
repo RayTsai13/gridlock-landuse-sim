@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +21,7 @@ from .network import (
     parse_network_payload,
 )
 from .protocol import validate_network_size
+from .service import validate_network_service
 from .overlays import CrowdOverlay, LiveOverlayManager
 from .sim_time import PlaybackController
 
@@ -52,17 +54,18 @@ class State:
         frame_interval_seconds: float = 1.0,
         sim_step_seconds: int = 1800,
         built_mass_path: str | Path | None = DEFAULT_BUILT_MASS_PATH,
+        shared: State | None = None,
     ) -> None:
         self.grid = grid
-        self.centers = cell_centers(grid)
-        self.built_mass = (
+        self.centers = shared.centers if shared else cell_centers(grid)
+        self.built_mass = shared.built_mass if shared else (
             None if built_mass_path is None else load_built_mass(built_mass_path, grid)
         )
         # Computed once and shared by every consumer, so land use, crowds,
         # walksheds and frame composition cannot disagree about where the city
         # is -- the bug that let a red blob sit on Elliott Bay.
-        self.habitability = cell_habitability(self.centers, self.built_mass)
-        self.land_use = build_land_use(self.centers, built_mass=self.built_mass)
+        self.habitability = shared.habitability if shared else cell_habitability(self.centers, self.built_mass)
+        self.land_use = shared.land_use if shared else build_land_use(self.centers, built_mass=self.built_mass)
         self.demand_field = DemandField(self.land_use)
         self.composer = FrameComposer(cols=grid.cols, habitability=self.habitability)
         self.playback = PlaybackController(
@@ -86,6 +89,7 @@ class State:
         self._latest_frame: dict[str, object] | None = None
         self._subscribers: int = 0
         self._encoded_frame: str | None = None
+        self.composition_seconds = 0.0
 
     @property
     def version(self) -> int:
@@ -134,6 +138,13 @@ class State:
 
     # -- Mutations ---------------------------------------------------------
 
+    def scenario_payload(self):
+        return {
+            "scenario_id": self.scenario_id,
+            "stops": [{"id": stop.id, "name": stop.name, "coordinates": [stop.lon, stop.lat]} for stop in self.active_network.stops],
+            "lines": [{"id": line.id, "name": line.name, "stopIds": list(line.stop_ids), "path": list(line.path)} for line in self.active_network.lines],
+        }
+
     def set_scenario(
         self,
         scenario_id: str,
@@ -149,6 +160,7 @@ class State:
             stops_payload=stops,
             lines_payload=lines,
         )
+        validate_network_service(network)
         if network != self.active_network:
             self.service = ServiceCapacity(
                 self.grid, network, centers=self.centers, habitability=self.habitability,
@@ -272,7 +284,9 @@ class State:
     def current_frame(self) -> dict[str, object]:
         """The frame every connection shares, composed at most once per change."""
         if self._latest_frame is None:
+            started = time.perf_counter()
             self._latest_frame = self.compose_frame()
+            self.composition_seconds = time.perf_counter() - started
         return self._latest_frame
 
     def compose_frame(self) -> dict[str, object]:

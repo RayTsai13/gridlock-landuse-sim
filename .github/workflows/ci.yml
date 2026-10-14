@@ -1,8 +1,6 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
   pull_request:
   workflow_dispatch:
   # Called by deploy.yml so a deploy cannot run ahead of a green build.
@@ -41,3 +39,14 @@ jobs:
         run: npm test
       - name: Typecheck and build
         run: npm run build
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install browser test dependencies
+        run: |
+          pip install -r backend/requirements.txt
+          npx playwright install --with-deps chromium
+      - name: Browser integration
+        env:
+          PYTHON: python
+        run: npm run test:e2e

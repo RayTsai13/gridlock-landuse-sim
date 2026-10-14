@@ -1,3 +1,7 @@
+# October 2026 architecture update
+
+Buildings now use buffered, content-versioned vector tiles and a single MapLibre vector source. Regional GeoJSON remains offline regeneration input only. See [current generation, caching, and validation details](implementation-2026-10.md). The region-loading design below is retained as historical context, not the active runtime.
+
 # Seattle Map Architecture
 
 This document describes the current Seattle building map path in the frontend.

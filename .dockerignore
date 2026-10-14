@@ -14,3 +14,8 @@ seattle/data/raw
 # image only needs seattle_heatmap_grid.geojson from this directory.
 seattle/data/processed/*.csv
 seattle/data/processed/*_summary.json
+
+test-results
+playwright-report
+e2e
+public/seattle/seattle-buildings*.geojson

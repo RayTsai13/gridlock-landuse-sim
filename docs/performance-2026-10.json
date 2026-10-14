@@ -1,0 +1,108 @@
+{
+  "baseline": {
+    "label": "baseline",
+    "browser": "156.0.8078.4",
+    "viewport": "1280x800",
+    "cpuThrottle": 2,
+    "downloadBytesPerSecond": 2500000,
+    "buildingBytesMeaning": "decoded response bytes in development; not compressed wire bytes",
+    "basemap": "deterministic empty fixture",
+    "build": "development",
+    "readyMs": 24296,
+    "samples": [
+      {
+        "stage": "startup",
+        "buildingBytes": 29802356,
+        "metrics": {
+          "LayoutDuration": 0.105029,
+          "RecalcStyleDuration": 0.104696,
+          "TaskDuration": 17.625263,
+          "JSHeapUsedSize": 85119172
+        }
+      },
+      {
+        "stage": "pan-west",
+        "buildingBytes": 29802356,
+        "metrics": {
+          "LayoutDuration": 0.133451,
+          "RecalcStyleDuration": 0.142081,
+          "TaskDuration": 24.595993,
+          "JSHeapUsedSize": 121456912
+        }
+      },
+      {
+        "stage": "citywide",
+        "buildingBytes": 29802356,
+        "metrics": {
+          "LayoutDuration": 0.141151,
+          "RecalcStyleDuration": 0.152589,
+          "TaskDuration": 27.68076,
+          "JSHeapUsedSize": 122549252
+        }
+      },
+      {
+        "stage": "return",
+        "buildingBytes": 29802356,
+        "metrics": {
+          "LayoutDuration": 0.163425,
+          "RecalcStyleDuration": 0.190218,
+          "TaskDuration": 36.01736,
+          "JSHeapUsedSize": 122719280
+        }
+      }
+    ]
+  },
+  "current": {
+    "label": "current",
+    "browser": "156.0.8078.4",
+    "viewport": "1280x800",
+    "cpuThrottle": 2,
+    "downloadBytesPerSecond": 2500000,
+    "buildingBytesMeaning": "decoded response bytes in development; not compressed wire bytes",
+    "basemap": "deterministic empty fixture",
+    "build": "development",
+    "readyMs": 2918,
+    "samples": [
+      {
+        "stage": "startup",
+        "buildingBytes": 323479,
+        "metrics": {
+          "LayoutDuration": 0.036833,
+          "RecalcStyleDuration": 0.02871,
+          "TaskDuration": 3.365378,
+          "JSHeapUsedSize": 15193408
+        }
+      },
+      {
+        "stage": "pan-west",
+        "buildingBytes": 334890,
+        "metrics": {
+          "LayoutDuration": 0.061172,
+          "RecalcStyleDuration": 0.064502,
+          "TaskDuration": 8.178191,
+          "JSHeapUsedSize": 16829676
+        }
+      },
+      {
+        "stage": "citywide",
+        "buildingBytes": 1264404,
+        "metrics": {
+          "LayoutDuration": 0.069272,
+          "RecalcStyleDuration": 0.07323,
+          "TaskDuration": 11.148053,
+          "JSHeapUsedSize": 17661668
+        }
+      },
+      {
+        "stage": "return",
+        "buildingBytes": 1264404,
+        "metrics": {
+          "LayoutDuration": 0.092343,
+          "RecalcStyleDuration": 0.103248,
+          "TaskDuration": 17.444792,
+          "JSHeapUsedSize": 18091436
+        }
+      }
+    ]
+  }
+}

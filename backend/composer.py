@@ -42,6 +42,9 @@ class HeatmapFrame:
     state_version: str
     sim_time: SimTime
     cells: list[list[int | float]]
+    cell_metrics: list[list[int | float]]
+    totals: dict[str, float]
+    model: dict[str, object]
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -49,6 +52,9 @@ class HeatmapFrame:
             "state_version": self.state_version,
             "sim_time": self.sim_time.to_dict(),
             "cells": self.cells,
+            "cell_metrics": self.cell_metrics,
+            "totals": self.totals,
+            "model": self.model,
         }
 
 
@@ -85,7 +91,7 @@ class FrameComposer:
         crowds = overlays.trips_per_hour(sim_time)
         demand = [b + c for b, c in zip(base, crowds)]
 
-        served = service.allocate(demand)
+        served = service.allocate(demand, sim_time=sim_time)
         unmet = [max(0.0, d - s) for d, s in zip(demand, served)]
 
         return HeatmapFrame(
@@ -93,6 +99,10 @@ class FrameComposer:
             state_version=state_version,
             sim_time=sim_time,
             cells=self._to_sparse_cells(unmet),
+            cell_metrics=[[idx // self.cols, idx % self.cols, value, served[idx], unmet[idx]]
+                          for idx, value in enumerate(demand) if value > 0],
+            totals={"generated": sum(demand), "served": sum(served), "unmet": sum(unmet)},
+            model={"synthetic": False, **service.metadata},
         )
 
     def _to_sparse_cells(self, unmet: list[float]) -> list[list[int | float]]:

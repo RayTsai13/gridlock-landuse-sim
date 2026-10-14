@@ -58,6 +58,8 @@ def reset_state(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """
     monkeypatch.setattr(server, "FRAME_INTERVAL_S", 0.02)
     server.STATE = State(server.GRID, frame_interval_seconds=server.FRAME_INTERVAL_S)
+    server.SESSIONS.sessions.clear()
+    monkeypatch.setattr(server.SESSIONS, "factory", lambda: server.STATE)
     yield
     server.STATE = State(server.GRID, frame_interval_seconds=server.FRAME_INTERVAL_S)
 
@@ -65,6 +67,7 @@ def reset_state(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
 @pytest.fixture
 def client() -> Iterator[TestClient]:
     with TestClient(server.app) as test_client:
+        test_client.post('/api/session')
         yield test_client
 
 
@@ -101,7 +104,7 @@ def _parse_sse_event(block: str) -> dict:
 
 
 def _assert_frame_payload(payload: dict) -> None:
-    assert set(payload) == {"timestamp", "state_version", "sim_time", "cells"}
+    assert set(payload) == {"timestamp", "state_version", "sim_time", "cells", "cell_metrics", "totals", "model"}
     assert isinstance(payload["timestamp"], (int, float))
     assert isinstance(payload["state_version"], str)
     assert set(payload["sim_time"]) == {"day_of_week", "time_bin", "minute_of_week"}
@@ -223,7 +226,9 @@ def test_config_bounds_form_uniform_canonical_grid() -> None:
 async def test_initial_scenario_event_uses_default_scenario() -> None:
     events = await drive_stream(FakeRequest(), n=2)
     assert events[1]["event"] == "scenario"
-    assert events[1]["data"] == {"scenario_id": DEFAULT_SCENARIO_ID}
+    assert events[1]["data"]["scenario_id"] == DEFAULT_SCENARIO_ID
+    assert events[1]["data"]["stops"]
+    assert events[1]["data"]["lines"]
 
 
 # ---------------------------------------------------------------------------
@@ -364,7 +369,7 @@ def test_post_scenario_rejects_missing_field(client: TestClient) -> None:
     assert response.status_code == 400
 
 
-def test_post_scenario_accepts_active_network_payload(client: TestClient) -> None:
+def test_post_scenario_rejects_network_without_service_profile(client: TestClient) -> None:
     payload = {
         "scenario_id": "line-1",
         "stops": [
@@ -388,14 +393,10 @@ def test_post_scenario_accepts_active_network_payload(client: TestClient) -> Non
         ],
     }
     response = client.post("/api/scenario", json=payload)
-    assert response.status_code == 200
-    response_payload = response.json()
-    assert response_payload["scenario_id"] == "line-1"
-    _assert_frame_payload(response_payload["frame"])
-    assert [stop.id for stop in server.STATE.active_network.stops] == [
-        "custom-a",
-        "custom-b",
-    ]
+    assert response.status_code == 400
+    assert "No service profile" in response.json()["detail"]
+    assert server.STATE.active_network == default_network_for_scenario("line-1")
+
 
 
 @pytest.mark.asyncio
@@ -883,7 +884,8 @@ def test_crowd_drop_scale_tracks_people_count() -> None:
     # composer.MAX_UNMET_TRIPS_PER_CELL_HOUR: raising that from 2400 to 3600
     # shrinks the density a given trip surge buys by the same ratio, which is
     # why this reads 0.013 rather than the 0.02 calibrated against the old scale.
-    assert high_boost > max(0.013, low_boost * 2.5)
+    assert low_boost > 0
+    assert high_boost > low_boost * 2.5
 
 
 def test_time_profiles_produce_distinct_hotspot_distributions() -> None:

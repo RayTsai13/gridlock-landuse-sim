@@ -1,0 +1,25 @@
+{
+  "tilejson": "3.0.0",
+  "name": "Seattle buildings",
+  "scheme": "xyz",
+  "minzoom": 8,
+  "maxzoom": 15,
+  "bounds": [
+    -122.44,
+    47.53,
+    -122.25,
+    47.7
+  ],
+  "tiles": [
+    "/seattle/buildings/647c740aedbb03b8/{z}/{x}/{y}.pbf"
+  ],
+  "vector_layers": [
+    {
+      "id": "buildings",
+      "fields": {
+        "OBJECTID": "Number",
+        "height_m": "Number"
+      }
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 # Frontend source
 
-This directory contains the React 19 + TypeScript frontend. Vite starts the app from `main.tsx`; `App.tsx` composes the Seattle map, building regions, heatmap, transit scenarios, playback controls, crowd interactions, and deck.gl objects.
+This directory contains the React 19 + TypeScript frontend. Vite starts the app from `main.tsx`; `App.tsx` composes the Seattle map, vector-tiled buildings, heatmap, transit scenarios, playback controls, crowd interactions, and deck.gl objects.
 
 ## Run and verify
 
@@ -25,13 +25,13 @@ The development server runs at `http://localhost:5173` and proxies same-origin `
 | `App.css`, `index.css` | Application and global styling |
 | `DeckGLOverlay.tsx` | MapLibre/deck.gl overlay bridge |
 | `MapOverlays.tsx`, `SpaceNeedle.ts` | Deferred animation subtree and viewport-gated landmark |
-| `buildings/visibility.ts` | Viewport-only region selection |
+| `heatmap/session.tsx`, `useTimeControls.ts`, `useCrowdDrop.ts`, `useDemandInspection.ts` | Session initialization and focused interaction hooks |
 | `Mascot.tsx`, `Mascot.css` | Draggable crowd-placement mascot |
 | [`heatmap/`](heatmap/README.md) | HTTP client, SSE lifecycle, frame conversion, and density styling |
 | [`stops/`](stops/README.md) | Transit definitions, MapLibre layers, track geometry, and train synthesis |
 | `assets/` | Source-controlled assets bundled by Vite |
 
-Browser-served building GeoJSON and the Space Needle model live in `../public/seattle/`, not under `src/assets/`.
+Browser-served building vector tiles and the Space Needle model live in `../public/seattle/`, not under `src/assets/`.
 
 ## Boundaries to preserve
 

@@ -2,20 +2,24 @@
 import assert from 'node:assert/strict';
 
 const base = 'http://127.0.0.1:8000';
+const session = await fetch(base + '/api/session', { method: 'POST' });
+assert(session.ok);
+const cookie = session.headers.get('set-cookie').split(';')[0];
+const request = (url, options = {}) => fetch(url, { ...options, headers: { ...options.headers, Cookie: cookie } });
 const json = async (path, body) => {
-  const res = await fetch(base + path, {
+  const res = await request(base + path, {
     method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body),
   });
   assert(res.ok, `${path}: ${res.status}`);
   return res.json();
 };
-const initial = await (await fetch(base + '/api/playback')).json();
+const initial = await (await request(base + '/api/playback')).json();
 const controllers = [];
 const peopleIds = [];
 async function openStream() {
   const controller = new AbortController();
   controllers.push(controller);
-  const response = await fetch(base + '/api/heatmap/stream', {signal: controller.signal});
+  const response = await request(base + '/api/heatmap/stream', {signal: controller.signal});
   assert(response.ok);
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -66,6 +70,6 @@ try {
 } finally {
   clearTimeout(watchdog);
   for (const controller of controllers) controller.abort();
-  for (const id of peopleIds) await fetch(`${base}/api/people/${id}`, {method: 'DELETE'});
+  for (const id of peopleIds) await request(`${base}/api/people/${id}`, {method: 'DELETE'});
   await json('/api/playback', {is_playing: initial.is_playing});
 }

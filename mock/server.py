@@ -25,7 +25,9 @@ from dataclasses import dataclass
 from backend.protocol import MAX_PEOPLE, parse_person, parse_batch, validate_network_size
 
 from fastapi import FastAPI, HTTPException, Request, Response
-from fastapi.middleware.cors import CORSMiddleware
+from backend.sessions import SessionMiddleware, SessionRegistry, current_state
+from backend.network import parse_network_payload
+from backend.service import validate_network_service
 from fastapi.responses import StreamingResponse
 
 async def _frame_ticker() -> None:
@@ -38,11 +40,15 @@ async def _frame_ticker() -> None:
         # Skip missed deadlines instead of bursting ticks after a long stall.
         deadline = max(deadline, loop.time())
         try:
-            if STATE.subscriber_count == 0:
-                continue
-            if PLAYBACK.is_playing:
-                STATE.tick()
-                await STATE.notify_change()
+            SESSIONS.cleanup()
+            for state in [STATE, *(session.state for session in SESSIONS.sessions.values())]:
+                token = current_state.set(state if state is not STATE else None)
+                try:
+                    if state.subscriber_count and _playback().is_playing:
+                        state.tick()
+                        await state.notify_change()
+                finally:
+                    current_state.reset(token)
         except asyncio.CancelledError:
             raise
         except Exception:  # pragma: no cover - keep the ticker alive
@@ -65,12 +71,6 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(title="Gridlock — mock heatmap server", lifespan=lifespan)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 GRID_CONFIG = {
     "bounds": {"west": -122.4597, "south": 47.481, "east": -122.2244, "north": 47.734},
@@ -309,6 +309,8 @@ class MockPlaybackController:
 class MockState:
     def __init__(self) -> None:
         self.scenario_id = DEFAULT_SCENARIO_ID
+        self.playback = MockPlaybackController()
+        self.network = parse_network_payload(scenario_id=DEFAULT_SCENARIO_ID)
         self.scenario_revision = 0
         self.people: dict[str, Person] = {}
         self.drift = 0.0
@@ -342,15 +344,15 @@ class MockState:
         if self._latest_frame is None:
             frame = generate_frame(self.drift, self.scenario_id, list(self.people.values()))
             frame["state_version"] = f"state_v{self._version}"
-            frame["sim_time"] = PLAYBACK.current_time.to_dict()
+            frame["sim_time"] = _playback().current_time.to_dict()
             self._latest_frame = frame
         return self._latest_frame
 
     def tick(self) -> None:
         """Advance the mock one frame. The single producer, as in the backend."""
-        if not PLAYBACK.is_playing:
+        if not _playback().is_playing:
             return
-        PLAYBACK.advance()
+        _playback().advance()
         self.drift += 0.5
         self.invalidate_frame()
         self.current_frame()
@@ -382,10 +384,18 @@ class MockState:
                 pass
         return self._version
 
+    def scenario_payload(self):
+        return {
+            "scenario_id": self.scenario_id,
+            "stops": [{"id": stop.id, "name": stop.name, "coordinates": [stop.lon, stop.lat]} for stop in self.network.stops],
+            "lines": [{"id": line.id, "name": line.name, "stopIds": list(line.stop_ids), "path": list(line.path)} for line in self.network.lines],
+        }
+
     def set_scenario(self, scenario_id: str) -> None:
         if scenario_id not in VALID_SCENARIO_IDS:
             raise ValueError(f"Unknown scenario_id: {scenario_id!r}")
         self.scenario_id = scenario_id
+        self.network = parse_network_payload(scenario_id=scenario_id)
         self.scenario_revision += 1
         self.invalidate_frame()
 
@@ -457,6 +467,19 @@ class MockState:
 
 STATE = MockState()
 PLAYBACK = MockPlaybackController()
+
+SESSIONS = SessionRegistry(MockState)
+app.add_middleware(SessionMiddleware, registry=SESSIONS)
+
+
+def _state():
+    return current_state.get() or STATE
+
+
+def _playback():
+    state = current_state.get()
+    return state.playback if state is not None else PLAYBACK
+
 
 _SHUTDOWN: asyncio.Event | None = None
 
@@ -566,60 +589,64 @@ def generate_frame(
             if density > 0.05:
                 cells.append([r, c, round(density, 3)])
 
-    return {"timestamp": time.time(), "cells": cells}
+    metrics = [[row, col, density * 3600, 0.0, density * 3600] for row, col, density in cells]
+    total = sum(cell[2] for cell in metrics)
+    return {"timestamp": time.time(), "cells": cells, "cell_metrics": metrics,
+            "totals": {"generated": total, "served": 0.0, "unmet": total},
+            "model": {"synthetic": True}}
 
 
 async def _stream(request: Request):
     event_id = 0
     shutdown = _shutdown_event()
-    STATE.add_subscriber()
+    _state().add_subscriber()
 
     try:
         yield _sse(event_id, "config", GRID_CONFIG)
         event_id += 1
 
-        yield _sse(event_id, "scenario", {"scenario_id": STATE.scenario_id})
+        yield _sse(event_id, "scenario", _state().scenario_payload())
         event_id += 1
-        yield _sse(event_id, "playback", PLAYBACK.to_dict())
+        yield _sse(event_id, "playback", _playback().to_dict())
         event_id += 1
-        last_scenario = STATE.scenario_id
-        last_scenario_revision = STATE.scenario_revision
-        last_version = STATE.version
-        last_playback_state = PLAYBACK.to_dict()
+        last_scenario = _state().scenario_id
+        last_scenario_revision = _state().scenario_revision
+        last_version = _state().version
+        last_playback_state = _playback().to_dict()
 
         while not shutdown.is_set():
             if await request.is_disconnected():
                 break
 
             if (
-                STATE.scenario_id != last_scenario
-                or STATE.scenario_revision != last_scenario_revision
+                _state().scenario_id != last_scenario
+                or _state().scenario_revision != last_scenario_revision
             ):
-                yield _sse(event_id, "scenario", {"scenario_id": STATE.scenario_id})
+                yield _sse(event_id, "scenario", _state().scenario_payload())
                 event_id += 1
-                last_scenario = STATE.scenario_id
-                last_scenario_revision = STATE.scenario_revision
+                last_scenario = _state().scenario_id
+                last_scenario_revision = _state().scenario_revision
 
-            playback_state = PLAYBACK.to_dict()
+            playback_state = _playback().to_dict()
             if playback_state != last_playback_state:
                 yield _sse(event_id, "playback", playback_state)
                 event_id += 1
                 last_playback_state = playback_state
 
-            yield f"id: {event_id}\nevent: frame\ndata: {STATE.encoded_frame()}\n\n"
+            yield f"id: {event_id}\nevent: frame\ndata: {_state().encoded_frame()}\n\n"
             event_id += 1
 
-            while STATE.version == last_version and not shutdown.is_set():
-                await STATE.wait_for_change(last_version, timeout=FRAME_INTERVAL_S)
-                if STATE.version == last_version:
+            while _state().version == last_version and not shutdown.is_set():
+                await _state().wait_for_change(last_version, timeout=FRAME_INTERVAL_S)
+                if _state().version == last_version:
                     if await request.is_disconnected():
                         return
                     yield ": heartbeat\n\n"
-            last_version = STATE.version
+            last_version = _state().version
     except asyncio.CancelledError:
         raise
     finally:
-        STATE.remove_subscriber()
+        _state().remove_subscriber()
 
 
 @app.get("/api/heatmap/stream")
@@ -641,39 +668,42 @@ async def post_scenario(payload: dict):
         raise HTTPException(status_code=400, detail="scenario_id must be a string")
     try:
         validate_network_size(payload.get("stops"), payload.get("lines"))
-        STATE.set_scenario(scenario_id)
+        network = parse_network_payload(scenario_id=scenario_id, stops_payload=payload.get('stops'), lines_payload=payload.get('lines'))
+        validate_network_service(network)
+        _state().set_scenario(scenario_id)
+        _state().network = network
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    await STATE.notify_change()
-    return {"scenario_id": STATE.scenario_id, "frame": STATE.current_frame()}
+    await _state().notify_change()
+    return {**_state().scenario_payload(), "frame": _state().current_frame()}
 
 
 @app.get("/api/playback")
 async def get_playback():
-    return PLAYBACK.to_dict()
+    return _playback().to_dict()
 
 
 @app.post("/api/playback")
 async def update_playback(payload: dict):
     if "is_playing" in payload:
-        PLAYBACK.set_playing(bool(payload["is_playing"]))
+        _playback().set_playing(bool(payload["is_playing"]))
     if "sim_minutes_per_second" in payload:
         try:
-            PLAYBACK.set_speed(float(payload["sim_minutes_per_second"]))
+            _playback().set_speed(float(payload["sim_minutes_per_second"]))
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-    STATE.invalidate_frame()
-    await STATE.notify_change()
-    return PLAYBACK.to_dict()
+    _state().invalidate_frame()
+    await _state().notify_change()
+    return _playback().to_dict()
 
 
 @app.post("/api/playback/seek")
 async def seek_playback(payload: dict):
     try:
         if "minute_of_week" in payload:
-            PLAYBACK.seek(minute_of_week=int(payload["minute_of_week"]))
+            _playback().seek(minute_of_week=int(payload["minute_of_week"]))
         else:
-            PLAYBACK.seek(
+            _playback().seek(
                 day_of_week=int(payload["day_of_week"]),
                 time_bin=int(payload["time_bin"]),
             )
@@ -682,21 +712,21 @@ async def seek_playback(payload: dict):
             status_code=400,
             detail="Seek payload must include minute_of_week or day_of_week and time_bin.",
         ) from exc
-    STATE.invalidate_frame()
-    await STATE.notify_change()
-    return PLAYBACK.to_dict()
+    _state().invalidate_frame()
+    await _state().notify_change()
+    return _playback().to_dict()
 
 
 @app.post("/api/people", status_code=201)
 async def post_people(payload: dict):
     try:
-        if len(STATE.people) >= MAX_PEOPLE:
+        if len(_state().people) >= MAX_PEOPLE:
             raise ValueError(f"at most {MAX_PEOPLE} active crowds are supported")
         entry = parse_person(payload, GRID_CONFIG["bounds"])
-        person = STATE.add_person(**entry)
+        person = _state().add_person(**entry)
     except (KeyError, TypeError, ValueError, OverflowError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    await STATE.notify_change()
+    await _state().notify_change()
     return person.to_public_dict(include_tuning=any(
         key in payload for key in ("kind", "duration_minutes", "radius_m", "decay_m")
     ))
@@ -705,28 +735,28 @@ async def post_people(payload: dict):
 @app.post("/api/people/batch", status_code=201)
 async def post_people_batch(payload: dict):
     try:
-        entries = parse_batch(payload, GRID_CONFIG["bounds"], len(STATE.people))
-        people = STATE.add_people_batch(entries)
+        entries = parse_batch(payload, GRID_CONFIG["bounds"], len(_state().people))
+        people = _state().add_people_batch(entries)
     except (KeyError, TypeError, ValueError, OverflowError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    await STATE.notify_change()
+    await _state().notify_change()
     return {"people": [person.to_public_dict(include_tuning=True) for person in people]}
 
 
 @app.delete("/api/people/{person_id}")
 async def delete_person(person_id: str):
     try:
-        STATE.remove_person(person_id)
+        _state().remove_person(person_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="unknown id") from exc
-    await STATE.notify_change()
+    await _state().notify_change()
     return Response(status_code=204)
 
 
 @app.delete("/api/people")
 async def delete_all_people():
-    STATE.clear_people()
-    await STATE.notify_change()
+    _state().clear_people()
+    await _state().notify_change()
     return Response(status_code=204)
 
 
@@ -735,6 +765,6 @@ async def get_people():
     return {
         "people": [
             {"id": p.id, "lat": p.lat, "lon": p.lon, "count": p.count}
-            for p in STATE.people.values()
+            for p in _state().people.values()
         ],
     }

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FeatureCollection, Point } from 'geojson';
 import { emptyGrid, frameToGeoJSON } from './grid.ts';
+import { ensureSession } from './session.ts';
 import type { GridConfig, Frame } from './grid.ts';
 import type { BuiltMass } from './mask.ts';
 import {
@@ -46,6 +47,9 @@ export type HeatmapOptions = {
 
 export type HeatmapApi = {
   geojson: FeatureCollection<Point>;
+  frame: Frame | null;
+  config: GridConfig | null;
+  network: { stops: ScenarioStop[]; lines: ScenarioLine[] } | null;
   /** Last scenario_id confirmed by the server via a `scenario` event. */
   scenarioId: string | null;
   playback: PlaybackState | null;
@@ -82,6 +86,8 @@ export type HeatmapDiagnostics = {
 export function useHeatmap(options: HeatmapOptions = {}): HeatmapApi {
   const { renderGeometry = true, builtMass = null } = options;
 
+  const [frame, setFrame] = useState<Frame | null>(null);
+  const [network, setNetwork] = useState<{ stops: ScenarioStop[]; lines: ScenarioLine[] } | null>(null);
   const [geojson, setGeojson] = useState<FeatureCollection<Point>>(emptyGrid());
   const [scenarioId, setScenarioId] = useState<string | null>(null);
   const [playback, setPlaybackState] = useState<PlaybackState | null>(null);
@@ -121,6 +127,26 @@ export function useHeatmap(options: HeatmapOptions = {}): HeatmapApi {
 
   useEffect(() => {
     const source = new EventSource(STREAM_URL);
+    let cancelled = false;
+    let recovering = false;
+    const recover = () => {
+      if (recovering) return;
+      recovering = true;
+      void ensureSession().then((session) => {
+        if (cancelled) return;
+        if (session.reset) window.dispatchEvent(new Event('simulation-reset'));
+        source.close();
+        setRetryToken((value) => value + 1);
+      }).catch(() => { recovering = false; });
+    };
+    const onReset = () => {
+      latestFrameRef.current = null;
+      setFrame(null);
+      setGeojson(emptyGrid());
+      source.close();
+      setRetryToken((value) => value + 1);
+    };
+    window.addEventListener('simulation-reset', onReset);
 
     /** Parse an SSE payload without letting a bad frame kill the listener. */
     const parse = <T,>(event: MessageEvent, label: string): T | null => {
@@ -166,9 +192,10 @@ export function useHeatmap(options: HeatmapOptions = {}): HeatmapApi {
     });
 
     source.addEventListener('scenario', (e: MessageEvent) => {
-      const payload = parse<{ scenario_id: string }>(e, 'scenario');
+      const payload = parse<{ scenario_id: string; stops?: ScenarioStop[]; lines?: ScenarioLine[] }>(e, 'scenario');
       if (!payload) return;
       setScenarioId(payload.scenario_id);
+      if (payload.stops && payload.lines) setNetwork({ stops: payload.stops, lines: payload.lines });
       if (pendingScenarioRef.current === payload.scenario_id) {
         pendingScenarioRef.current = null;
       }
@@ -204,6 +231,7 @@ export function useHeatmap(options: HeatmapOptions = {}): HeatmapApi {
         return;
       }
       latestFrameRef.current = frame;
+      setFrame(frame);
 
       let featureCount = 0;
       if (renderGeometryRef.current) {
@@ -240,6 +268,7 @@ export function useHeatmap(options: HeatmapOptions = {}): HeatmapApi {
       const failed = consecutiveErrorsRef.current >= CONNECTION_FAILURE_THRESHOLD;
       if (failed) {
         console.warn('[heatmap] SSE connection is not recovering');
+        recover();
       }
       setDiagnostics((current) => ({
         ...current,
@@ -251,6 +280,8 @@ export function useHeatmap(options: HeatmapOptions = {}): HeatmapApi {
     });
 
     return () => {
+      cancelled = true;
+      window.removeEventListener('simulation-reset', onReset);
       source.close();
     };
   }, [retryToken]);
@@ -290,9 +321,12 @@ export function useHeatmap(options: HeatmapOptions = {}): HeatmapApi {
     setDiagnostics((current) => ({
       ...current,
       pendingScenarioId: id,
+      lastError: null,
     }));
     try {
       const response = await postScenario(id, stops, lines);
+      setScenarioId(response.scenario_id);
+      if (response.stops && response.lines) setNetwork({ stops: response.stops, lines: response.lines });
       if (response.frame && configRef.current) {
         const frameVersion = stateVersionNumber(response.frame.state_version);
         if (frameVersion !== null) {
@@ -302,6 +336,7 @@ export function useHeatmap(options: HeatmapOptions = {}): HeatmapApi {
           );
         }
         latestFrameRef.current = response.frame;
+        setFrame(response.frame);
         const nextGeojson = renderGeometryRef.current
           ? frameToGeoJSON(response.frame.cells, configRef.current, builtMassRef.current)
           : null;
@@ -357,6 +392,9 @@ export function useHeatmap(options: HeatmapOptions = {}): HeatmapApi {
 
   return {
     geojson,
+    frame,
+    config: configRef.current,
+    network,
     scenarioId,
     playback,
     diagnostics,
