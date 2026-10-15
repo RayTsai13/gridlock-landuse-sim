@@ -32,10 +32,11 @@ REGIONS = {
         "east": -122.2550,
         "north": 47.6760,
     },
+    # Meet east-neighborhoods at -122.326 to include central Wallingford.
     "northwest-seattle": {
         "west": -122.4300,
         "south": 47.6205,
-        "east": -122.3380,
+        "east": -122.3260,
         "north": 47.6900,
     },
     "west-seattle": {

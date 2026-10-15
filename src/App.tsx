@@ -92,7 +92,7 @@ const BUILDING_REGIONS: BuildingRegion[] = [
     bounds: {
       west: -122.43,
       south: 47.6205,
-      east: -122.338,
+      east: -122.326,
       north: 47.69,
     },
   },

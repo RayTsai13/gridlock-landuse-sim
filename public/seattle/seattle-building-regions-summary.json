@@ -19,11 +19,11 @@
   },
   {
     "region": "northwest-seattle",
-    "features": 48457,
-    "features_with_height": 46152,
+    "features": 56159,
+    "features_with_height": 53515,
     "height_m_min": 1.501,
     "height_m_max": 56.05,
-    "height_m_avg": 6.605448496273184,
+    "height_m_avg": 6.639675810520415,
     "out_path": "/seattle/seattle-buildings-northwest-seattle.geojson"
   },
   {

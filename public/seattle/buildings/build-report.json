@@ -1,9 +1,9 @@
 {
-  "revision": "647c740aedbb03b8",
+  "revision": "81e897bae1dafde8",
   "generator": "tippecanoe v2.79.0",
-  "buildings": 123623,
+  "buildings": 129246,
   "tiles": 630,
-  "compressedBytes": 18134228,
-  "startupBytes": 716214,
+  "compressedBytes": 18832850,
+  "startupBytes": 716555,
   "maxTileBytes": 440656
 }
