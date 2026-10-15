@@ -39,7 +39,7 @@ from backend.network import ServiceCapacity, default_network_for_scenario
 from backend.sim_time import MINUTES_PER_DAY, MINUTES_PER_WEEK
 from backend.state import DEFAULT_SCENARIO_ID, VALID_SCENARIO_IDS, State
 
-GEOJSON_PATH = Path("seattle/data/processed/seattle_heatmap_grid.geojson")
+GEOJSON_PATH = server.GEOJSON_PATH
 
 CELL_ID_RE = re.compile(r"^r(\d+)_c(\d+)$")
 

@@ -58,7 +58,10 @@ test('building tiles and service assets load without legacy region downloads', a
   await page.getByRole('button', { name: 'Show heatmap', exact: true }).click();
   await page.mouse.move(640, 400);
   await expect(page.locator('.demand-tooltip')).toContainText('Modeled unmet trips/hour');
+  await expect(page.locator('.demand-tooltip')).toContainText('~250 m cell');
   await page.screenshot({ path: 'test-results/demand.png' });
+  await page.getByRole('button', { name: 'Hide heatmap', exact: true }).click();
+  await expect(page.locator('.demand-tooltip')).toHaveCount(0);
 });
 
 test('playback and crowd controls send confirmed mutations', async ({ page }) => {

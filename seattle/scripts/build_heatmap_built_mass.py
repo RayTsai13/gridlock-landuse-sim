@@ -5,7 +5,7 @@ The simulation's land use is a sum of radial Gaussians (see
 ``backend/landuse.py``). On its own that produces smooth blobs that ignore the
 shoreline, so demand bleeds onto Elliott Bay and Lake Union. This script bakes a
 "how much city is actually here" weight from the building footprints we already
-have, at four times the heatmap grid's resolution (~125 m), which is fine enough
+have, at twice the heatmap grid's resolution (~125 m), which is fine enough
 that open water reads as exactly zero.
 
 The weight is gross floor area: ``footprint_area * storeys``, summed per subcell
@@ -53,7 +53,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--grid-geojson",
-        default="../data/processed/seattle_heatmap_grid.geojson",
+        default="../data/processed/seattle_heatmap_grid_250m.geojson",
         help="Heatmap grid GeoJSON path relative to seattle/scripts/.",
     )
     parser.add_argument(
@@ -69,7 +69,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--sub",
         type=int,
-        default=4,
+        default=2,
         help="Subdivisions per grid cell per axis. Must match HEATMAP_SUBDIVISIONS.",
     )
     parser.add_argument(

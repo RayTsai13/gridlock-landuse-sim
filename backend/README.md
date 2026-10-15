@@ -86,7 +86,7 @@ where the city is.
 
 | Variable | Default | Notes |
 | --- | --- | --- |
-| `HEATMAP_GEOJSON` | `seattle/data/processed/seattle_heatmap_grid.geojson` | Resolved from the repository root unless explicitly overridden |
+| `HEATMAP_GEOJSON` | `seattle/data/processed/seattle_heatmap_grid_250m.geojson` | Resolved from the repository root unless explicitly overridden |
 | `HEATMAP_BUILT_MASS` | `seattle/data/processed/seattle_heatmap_built_mass.json` | Also repo-root relative. If the file is missing the server still boots and falls back to the coarse hand-drawn coastline in `landuse.is_probable_water` |
 | `HEATMAP_FRAME_INTERVAL` | `1.0` | Wall-clock seconds per ticker iteration |
 | `HEATMAP_SIM_STEP_SECONDS` | `1800` | Simulated seconds per frame |
@@ -102,3 +102,7 @@ unmet demand, and if the scale does not follow, downtown pins at 1.0 and crowd
 drops there stop being visible.
 
 Playback speeds are quantized to whole simulated minutes per frame because `minute_of_week` is an integer in the wire contract.
+
+## Finer grid
+
+The default runtime grid is `seattle_heatmap_grid_250m.geojson` (112×70). Keep the original coarse grid as regeneration input; do not pair it with the new built-mass artifact. See `../docs/grid-resolution.md` for regeneration and benchmarks.

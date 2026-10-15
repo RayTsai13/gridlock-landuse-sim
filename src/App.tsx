@@ -306,7 +306,7 @@ function App() {
   // Deploy state: index of the highest deployed step (0 = Line 1 only)
   const deployedIndex = Math.max(0, DEPLOY_STEPS.findIndex((step) => step.id === scenarioId));
   const [actionError, setActionError] = useState<string | null>(null);
-  const { demandTooltip, setDemandTooltip, inspectDemand, outline } = useDemandInspection(frame, config);
+  const { demandTooltip, setDemandTooltip, inspectDemand } = useDemandInspection(frame, config);
 
   const [queryBounds, setQueryBounds] = useState(initialBounds);
   const [initialBuildingRegionLoaded, setInitialBuildingRegionLoaded] = useState(false);
@@ -768,6 +768,7 @@ function App() {
             setInitialBuildingRegionLoaded(true);
           }
         }}
+        onMoveStart={() => setDemandTooltip(null)}
         onMoveEnd={(event) =>
           updateBuildingsForViewport(event.target as unknown as MapRef)
         }
@@ -839,11 +840,6 @@ function App() {
         <Source id="seattle-buildings" type="vector" url="/seattle/buildings/tilejson.json">
           <Layer beforeId="watername_ocean" {...buildingFillLayer} source-layer="buildings" />
         </Source>
-        {isHeatmapVisible && outline && (
-          <Source id="demand-cell" type="geojson" data={outline}>
-            <Layer id="demand-cell-outline" type="line" paint={{ 'line-color': '#163b66', 'line-width': 2 }} />
-          </Source>
-        )}
 
         {isMapLoaded && (
           <Suspense fallback={null}>

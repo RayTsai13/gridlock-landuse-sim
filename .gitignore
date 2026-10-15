@@ -32,6 +32,7 @@ seattle/data/processed/*
 # ...except the two artifacts the backend actually reads at runtime, which
 # backend.Dockerfile copies into the image.
 !seattle/data/processed/seattle_heatmap_grid.geojson
+!seattle/data/processed/seattle_heatmap_grid_250m.geojson
 !seattle/data/processed/seattle_heatmap_built_mass.json
 
 # Re-creatable frontend map assets exported by Seattle data scripts

@@ -12,11 +12,12 @@ const config: GridConfig = {
 const cellWidth = (config.bounds.east - config.bounds.west) / config.cols;
 const cellHeight = (config.bounds.north - config.bounds.south) / config.rows;
 
-const SUB = 4;
+const SUB = 2;
 
 /** A built-mass field whose every subcell carries `weight`. */
 function uniformMass(weight: number, cfg: GridConfig = config): BuiltMass {
   return {
+    bounds: cfg.bounds,
     rows: cfg.rows,
     cols: cfg.cols,
     sub: SUB,
@@ -167,4 +168,10 @@ describe('emptyGrid', () => {
   it('is a valid empty FeatureCollection', () => {
     expect(emptyGrid()).toEqual({ type: 'FeatureCollection', features: [] });
   });
+});
+
+it('ignores a mask with shifted geographic bounds', () => {
+  const mask = uniformMass(0);
+  mask.bounds = { ...config.bounds, west: config.bounds.west + 0.01 };
+  expect(frameToGeoJSON([[5, 5, 1]], config, mask)).toEqual(frameToGeoJSON([[5, 5, 1]], config));
 });

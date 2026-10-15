@@ -1,3 +1,4 @@
+import type { Bounds } from './grid.ts';
 import { useEffect, useState } from 'react';
 
 /**
@@ -5,7 +6,7 @@ import { useEffect, useState } from 'react';
  *
  * Built offline by `seattle/scripts/build_heatmap_built_mass.py` from Seattle's
  * building footprints, at `sub` times the heatmap grid's resolution (~125 m at
- * sub = 4). The backend reads the same artifact to shape demand; the frontend
+ * sub = 2). The backend reads the same artifact to shape demand; the frontend
  * uses it to decide *where inside a cell* that demand should show, which is what
  * keeps heat off Elliott Bay and out of Discovery Park.
  *
@@ -13,15 +14,17 @@ import { useEffect, useState } from 'react';
  * and `frameToGeoJSON`.
  */
 export type BuiltMass = {
+  bounds: Bounds;
   rows: number;
   cols: number;
   sub: number;
   weights: Float32Array;
 };
 
-const BUILT_MASS_URL = '/seattle/seattle-built-mass.json';
+const BUILT_MASS_URL = '/seattle/seattle-built-mass.json?grid=112x70';
 
 type BuiltMassPayload = {
+  bounds: Bounds;
   rows: number;
   cols: number;
   sub: number;
@@ -31,12 +34,13 @@ type BuiltMassPayload = {
 export function parseBuiltMass(payload: BuiltMassPayload): BuiltMass {
   const { rows, cols, sub } = payload;
   const expected = rows * cols * sub * sub;
-  if (!Number.isFinite(expected) || payload.weights.length !== expected) {
+  if (!payload.bounds || !(['west', 'south', 'east', 'north'] as const).every(key => Number.isFinite(payload.bounds[key])) ||
+      ![rows, cols, sub].every(value => Number.isInteger(value) && value > 0) || payload.weights.length !== expected) {
     throw new Error(
       `Built-mass holds ${payload.weights.length} weights, expected ${expected}`,
     );
   }
-  return { rows, cols, sub, weights: Float32Array.from(payload.weights) };
+  return { bounds: payload.bounds, rows, cols, sub, weights: Float32Array.from(payload.weights) };
 }
 
 /**

@@ -1,0 +1,204 @@
+{
+  "backend": {
+    "coarse": {
+      "rows": 56,
+      "cols": 35,
+      "loads": [
+        {
+          "sessions": 1,
+          "median_tick_ms": 3.685333504108712,
+          "max_tick_ms": 5.200917017646134,
+          "median_composition_ms": 2.828083510394208,
+          "frame_bytes": 53155,
+          "within_one_second": true
+        },
+        {
+          "sessions": 10,
+          "median_tick_ms": 13.36718798847869,
+          "max_tick_ms": 14.147167006740347,
+          "median_composition_ms": 5.33487502252683,
+          "frame_bytes": 53155,
+          "within_one_second": true
+        },
+        {
+          "sessions": 100,
+          "median_tick_ms": 137.07349949982017,
+          "max_tick_ms": 149.14975001011044,
+          "median_composition_ms": 53.5141645668773,
+          "frame_bytes": 53155,
+          "within_one_second": true
+        }
+      ]
+    },
+    "fine": {
+      "rows": 112,
+      "cols": 70,
+      "loads": [
+        {
+          "sessions": 1,
+          "median_tick_ms": 7.255333519424312,
+          "max_tick_ms": 7.6274999883025885,
+          "median_composition_ms": 4.291833494789898,
+          "frame_bytes": 195200,
+          "within_one_second": true
+        },
+        {
+          "sessions": 10,
+          "median_tick_ms": 53.750437014969066,
+          "max_tick_ms": 62.77541699819267,
+          "median_composition_ms": 23.421146965119988,
+          "frame_bytes": 195200,
+          "within_one_second": true
+        },
+        {
+          "sessions": 100,
+          "median_tick_ms": 552.8938539937371,
+          "max_tick_ms": 573.8252919982187,
+          "median_composition_ms": 258.09891302196775,
+          "frame_bytes": 195201,
+          "within_one_second": true
+        }
+      ]
+    }
+  },
+  "browser": {
+    "coarse": {
+      "label": "coarse-grid",
+      "browser": "156.0.8078.4",
+      "viewport": "1280x800",
+      "cpuThrottle": 2,
+      "downloadBytesPerSecond": 2500000,
+      "processing": {
+        "medianMs": 0.699999988079071,
+        "p95Ms": 0.800000011920929,
+        "points": 8031
+      },
+      "hoverP95Ms": 10.799999982118607,
+      "buildingBytesMeaning": "decoded response bytes in development; not compressed wire bytes",
+      "basemap": "deterministic empty fixture",
+      "build": "development",
+      "readyMs": 2849,
+      "samples": [
+        {
+          "stage": "startup",
+          "buildingBytes": 323479,
+          "metrics": {
+            "LayoutDuration": 0.133636,
+            "RecalcStyleDuration": 0.102898,
+            "TaskDuration": 5.809937,
+            "JSHeapUsedSize": 19481104
+          }
+        },
+        {
+          "stage": "pan-west",
+          "buildingBytes": 334890,
+          "metrics": {
+            "LayoutDuration": 0.164017,
+            "RecalcStyleDuration": 0.140852,
+            "TaskDuration": 9.196306,
+            "JSHeapUsedSize": 20248844
+          }
+        },
+        {
+          "stage": "citywide",
+          "buildingBytes": 1264404,
+          "metrics": {
+            "LayoutDuration": 0.180341,
+            "RecalcStyleDuration": 0.158445,
+            "TaskDuration": 9.973728,
+            "JSHeapUsedSize": 21586872
+          }
+        },
+        {
+          "stage": "return",
+          "buildingBytes": 1264404,
+          "metrics": {
+            "LayoutDuration": 0.212038,
+            "RecalcStyleDuration": 0.190279,
+            "TaskDuration": 13.092316,
+            "JSHeapUsedSize": 21805168
+          }
+        },
+        {
+          "stage": "top-down",
+          "buildingBytes": 1345896,
+          "metrics": {
+            "LayoutDuration": 0.225862,
+            "RecalcStyleDuration": 0.205637,
+            "TaskDuration": 14.950879,
+            "JSHeapUsedSize": 21980980
+          }
+        }
+      ]
+    },
+    "fine": {
+      "label": "fine-grid",
+      "browser": "156.0.8078.4",
+      "viewport": "1280x800",
+      "cpuThrottle": 2,
+      "downloadBytesPerSecond": 2500000,
+      "processing": {
+        "medianMs": 0.6000000238418579,
+        "p95Ms": 0.9000000059604645,
+        "points": 7960
+      },
+      "hoverP95Ms": 9.699999988079071,
+      "buildingBytesMeaning": "decoded response bytes in development; not compressed wire bytes",
+      "basemap": "deterministic empty fixture",
+      "build": "development",
+      "readyMs": 2765,
+      "samples": [
+        {
+          "stage": "startup",
+          "buildingBytes": 323479,
+          "metrics": {
+            "LayoutDuration": 0.101002,
+            "RecalcStyleDuration": 0.098428,
+            "TaskDuration": 5.320109,
+            "JSHeapUsedSize": 20112984
+          }
+        },
+        {
+          "stage": "pan-west",
+          "buildingBytes": 334890,
+          "metrics": {
+            "LayoutDuration": 0.124659,
+            "RecalcStyleDuration": 0.127363,
+            "TaskDuration": 8.279711,
+            "JSHeapUsedSize": 20868344
+          }
+        },
+        {
+          "stage": "citywide",
+          "buildingBytes": 1209524,
+          "metrics": {
+            "LayoutDuration": 0.136244,
+            "RecalcStyleDuration": 0.141747,
+            "TaskDuration": 9.061744,
+            "JSHeapUsedSize": 22033076
+          }
+        },
+        {
+          "stage": "return",
+          "buildingBytes": 1209524,
+          "metrics": {
+            "LayoutDuration": 0.155602,
+            "RecalcStyleDuration": 0.170414,
+            "TaskDuration": 11.800794,
+            "JSHeapUsedSize": 22271052
+          }
+        },
+        {
+          "stage": "top-down",
+          "buildingBytes": 1291016,
+          "metrics": {
+            "LayoutDuration": 0.166893,
+            "RecalcStyleDuration": 0.183274,
+            "TaskDuration": 13.685686,
+            "JSHeapUsedSize": 22505964
+          }
+        }
+      ]
+    }
+  }
+}

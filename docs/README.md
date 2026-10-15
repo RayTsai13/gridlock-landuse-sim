@@ -29,3 +29,5 @@ The long documents in `data_processing/` named `ARCHITECTURE.md`, `DEMAND_PIPELI
 - Update documentation in the same change as its corresponding code or contract.
 
 - [October 2026 sessions, model metrics, service data, tiles, and tests](implementation-2026-10.md)
+
+- [250 m demand grid and tooltip-only hover](grid-resolution.md)

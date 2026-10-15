@@ -11,7 +11,7 @@ export const heatmapLayer: LayerProps = {
     "circle-sort-key": ["get", "density"],
   },
   paint: {
-    // Samples sit on a 125 m lattice (HEATMAP_SUBDIVISIONS = 4 over a ~500 m
+    // Samples sit on a 125 m lattice (HEATMAP_SUBDIVISIONS = 2 over a ~250 m
     // grid), so the radius has to track ground distance or the field breaks
     // apart into polka dots as you zoom in. An exponential base-2 interpolation
     // does exactly that -- the radius doubles per zoom level, matching how many

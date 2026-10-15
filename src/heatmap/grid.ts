@@ -43,7 +43,7 @@ export type SimTime = {
   minute_of_week: number;
 };
 
-const HEATMAP_SUBDIVISIONS = 4;
+const HEATMAP_SUBDIVISIONS = 2;
 
 // Above the backend's own DISPLAY_THRESHOLD, so bilinear interpolation cannot
 // resurrect cells the server deliberately culled. Set lower and the tail of
@@ -55,14 +55,60 @@ const MIN_RENDER_DENSITY = 0.02;
 // shaping. Empty subcells are zero at any exponent above 0.
 const BUILT_MASS_SHAPING = 0.5;
 
+const coordinateCache = new WeakMap<GridConfig, number[][]>();
+
+function coordinatesFor(config: GridConfig) {
+  const cached = coordinateCache.get(config);
+  if (cached) return cached;
+  const coordinates: number[][] = [];
+  const width = (config.bounds.east - config.bounds.west) / config.cols;
+  const height = (config.bounds.north - config.bounds.south) / config.rows;
+  for (let row = 0; row < config.rows; row++) {
+    for (let col = 0; col < config.cols; col++) {
+      for (let sampleY = 0; sampleY < HEATMAP_SUBDIVISIONS; sampleY++) {
+        for (let sampleX = 0; sampleX < HEATMAP_SUBDIVISIONS; sampleX++) {
+          coordinates.push([
+            config.bounds.west + (col + (sampleX + 0.5) / HEATMAP_SUBDIVISIONS) * width,
+            config.bounds.north - (row + (sampleY + 0.5) / HEATMAP_SUBDIVISIONS) * height,
+          ]);
+        }
+      }
+    }
+  }
+  coordinateCache.set(config, coordinates);
+  return coordinates;
+}
+
+const shapingCache = new WeakMap<BuiltMass, { weights: Float64Array; means: Float64Array }>();
+
+function shapingFor(mask: BuiltMass) {
+  const cached = shapingCache.get(mask);
+  if (cached) return cached;
+  const weights = Float64Array.from(mask.weights, weight => weight ** BUILT_MASS_SHAPING);
+  const means = new Float64Array(mask.rows * mask.cols);
+  const subCols = mask.cols * mask.sub;
+  for (let row = 0; row < mask.rows; row++) {
+    for (let col = 0; col < mask.cols; col++) {
+      let total = 0;
+      for (let subRow = 0; subRow < mask.sub; subRow++) {
+        const start = (row * mask.sub + subRow) * subCols + col * mask.sub;
+        for (let subCol = 0; subCol < mask.sub; subCol++) total += weights[start + subCol];
+      }
+      means[row * mask.cols + col] = total / (mask.sub * mask.sub);
+    }
+  }
+  const shaping = { weights, means };
+  shapingCache.set(mask, shaping);
+  return shaping;
+}
+
 export function frameToGeoJSON(
   cells: CellTuple[],
   config: GridConfig,
   builtMass?: BuiltMass | null,
 ): FeatureCollection<Point> {
   const { bounds, rows, cols } = config;
-  const cellWidth = (bounds.east - bounds.west) / cols;
-  const cellHeight = (bounds.north - bounds.south) / rows;
+  const coordinates = coordinatesFor(config);
   const values = new Float32Array(rows * cols);
 
   for (const [row, col, density] of cells) {
@@ -73,8 +119,10 @@ export function frameToGeoJSON(
   // The mask is authored against the grid it was built for. A stale artifact
   // would silently mis-place every weight, so ignore it rather than guess.
   const mask =
-    builtMass && builtMass.rows === rows && builtMass.cols === cols ? builtMass : null;
+    builtMass && builtMass.rows === rows && builtMass.cols === cols &&
+    (Object.keys(bounds) as (keyof Bounds)[]).every(key => Math.abs(builtMass.bounds[key] - bounds[key]) < 1e-9) ? builtMass : null;
 
+  const shaping = mask ? shapingFor(mask) : null;
   const features: FeatureCollection<Point>['features'] = [];
 
   // Frames are sparse, but every sample of a cell reads its 8-neighbourhood
@@ -83,7 +131,8 @@ export function frameToGeoJSON(
   // dilated set keeps the cost proportional to the active area rather than to
   // the whole grid -- the difference between a few hundred cells and every one
   // of them, every second.
-  const visited = new Set<number>();
+  const visited: number[] = [];
+  const marked = new Uint8Array(rows * cols);
   for (const [row, col] of cells) {
     if (row < 0 || row >= rows || col < 0 || col >= cols) continue;
     const rowStart = Math.max(0, row - 1);
@@ -92,7 +141,11 @@ export function frameToGeoJSON(
     const colEnd = Math.min(cols - 1, col + 1);
     for (let r = rowStart; r <= rowEnd; r++) {
       for (let c = colStart; c <= colEnd; c++) {
-        visited.add(r * cols + c);
+        const index = r * cols + c;
+        if (!marked[index]) {
+          marked[index] = 1;
+          visited.push(index);
+        }
       }
     }
   }
@@ -106,7 +159,7 @@ export function frameToGeoJSON(
     // no built mass at all -- open water, the middle of a park -- spends none.
     let shapingScale = 0;
     if (mask) {
-      const meanWeight = cellMeanWeight(mask, row, col);
+      const meanWeight = shaping!.means[index];
       if (meanWeight <= 0) continue;
       shapingScale = 1 / meanWeight;
     }
@@ -123,7 +176,7 @@ export function frameToGeoJSON(
         if (mask) {
           density = Math.min(
             1,
-            density * subcellWeight(mask, row + y, col + x) * shapingScale,
+            density * subcellWeight(mask, shaping!.weights, row + y, col + x) * shapingScale,
           );
         }
 
@@ -133,10 +186,7 @@ export function frameToGeoJSON(
           type: 'Feature' as const,
           geometry: {
             type: 'Point' as const,
-            coordinates: [
-              bounds.west + (col + x) * cellWidth,
-              bounds.north - (row + y) * cellHeight,
-            ],
+            coordinates: coordinates[index * HEATMAP_SUBDIVISIONS ** 2 + sampleY * HEATMAP_SUBDIVISIONS + sampleX],
           },
           properties: { density },
         });
@@ -159,24 +209,11 @@ export function emptyGrid(): FeatureCollection<Point> {
  * `colCoord` are measured from the grid's north-west corner (so integers land
  * on cell corners, matching the geographic mapping above).
  */
-function subcellWeight(mask: BuiltMass, rowCoord: number, colCoord: number): number {
-  const { sub, cols, weights } = mask;
+function subcellWeight(mask: BuiltMass, weights: Float64Array, rowCoord: number, colCoord: number): number {
+  const { sub, cols } = mask;
   const subRow = Math.min(mask.rows * sub - 1, Math.floor(rowCoord * sub));
   const subCol = Math.min(cols * sub - 1, Math.floor(colCoord * sub));
-  return weights[subRow * cols * sub + subCol] ** BUILT_MASS_SHAPING;
-}
-
-function cellMeanWeight(mask: BuiltMass, row: number, col: number): number {
-  const { sub, cols, weights } = mask;
-  const subCols = cols * sub;
-  let total = 0;
-  for (let subRow = 0; subRow < sub; subRow++) {
-    const start = (row * sub + subRow) * subCols + col * sub;
-    for (let subCol = 0; subCol < sub; subCol++) {
-      total += weights[start + subCol] ** BUILT_MASS_SHAPING;
-    }
-  }
-  return total / (sub * sub);
+  return weights[subRow * cols * sub + subCol];
 }
 
 function sampleGrid(

@@ -31,7 +31,7 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 GEOJSON_PATH = Path(
     os.environ.get(
         "HEATMAP_GEOJSON",
-        str(_REPO_ROOT / "seattle" / "data" / "processed" / "seattle_heatmap_grid.geojson"),
+        str(_REPO_ROOT / "seattle" / "data" / "processed" / "seattle_heatmap_grid_250m.geojson"),
     )
 )
 BUILT_MASS_PATH = Path(

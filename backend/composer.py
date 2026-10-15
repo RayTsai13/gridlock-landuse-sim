@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 from .demand import DemandField
 from .geo import clamp
+from .grid import Grid
 from .network import ServiceCapacity
 from .overlays import LiveOverlayManager
 from .sim_time import SimTime
@@ -28,6 +29,13 @@ MAX_UNMET_TRIPS_PER_CELL_HOUR = 3600.0
 # Cosmetic shaping only. 1.0 is linear; lower values lift the midtones if the
 # map reads too dark. Adjust this, not MAX_UNMET_TRIPS_PER_CELL_HOUR, for looks.
 DENSITY_GAMMA = 0.85
+REFERENCE_CELL_AREA_DEGREES = 2.9922727785306768e-05
+
+
+def saturation_for_grid(grid: Grid) -> float:
+    area = (grid.bounds.east - grid.bounds.west) * (grid.bounds.north - grid.bounds.south) / (grid.rows * grid.cols)
+    return MAX_UNMET_TRIPS_PER_CELL_HOUR * area / REFERENCE_CELL_AREA_DEGREES
+
 
 # Cells at or below this display density are omitted from the frame. Set high
 # enough that the tail of near-invisible cells never ships: the frontend blurs

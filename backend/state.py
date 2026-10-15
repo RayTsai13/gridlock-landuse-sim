@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from .composer import FrameComposer
+from .composer import FrameComposer, saturation_for_grid
 from .demand import DemandField
 from .grid import Grid
 from .landuse import build_land_use, cell_centers, cell_habitability, load_built_mass
@@ -67,7 +67,7 @@ class State:
         self.habitability = shared.habitability if shared else cell_habitability(self.centers, self.built_mass)
         self.land_use = shared.land_use if shared else build_land_use(self.centers, built_mass=self.built_mass)
         self.demand_field = DemandField(self.land_use)
-        self.composer = FrameComposer(cols=grid.cols, habitability=self.habitability)
+        self.composer = FrameComposer(cols=grid.cols, habitability=self.habitability, max_unmet_trips=saturation_for_grid(grid))
         self.playback = PlaybackController(
             frame_interval_seconds=frame_interval_seconds,
             sim_step_seconds=sim_step_seconds,

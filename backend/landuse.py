@@ -132,6 +132,8 @@ def load_built_mass(path: str | Path, grid: Grid) -> list[float] | None:
     sub = int(payload["sub"])
     weights = payload["weights"]
 
+    if any(abs(payload["bounds"][key] - value) > 1e-9 for key, value in grid.bounds.to_dict().items()):
+        raise ValueError("Built-mass bounds do not match the heatmap grid")
     if rows != grid.rows or cols != grid.cols:
         raise ValueError(
             f"Built-mass grid is {rows}x{cols} but the heatmap grid is "
