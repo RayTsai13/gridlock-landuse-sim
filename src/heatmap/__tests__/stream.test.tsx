@@ -54,8 +54,8 @@ class FakeEventSource {
 // through an effect keeps the render itself side-effect free.
 const captured: { api: ReturnType<typeof useHeatmap> | null } = { api: null };
 
-function Probe({ renderGeometry = true }: { renderGeometry?: boolean }) {
-  const api = useHeatmap({ renderGeometry });
+function Probe() {
+  const api = useHeatmap();
   useEffect(() => {
     captured.api = api;
   });
@@ -95,7 +95,7 @@ describe('useHeatmap frame gating', () => {
       state_version: 'state_v4',
       cells: [[5, 5, 0.9]],
     });
-    expect(hook().geojson.features.length).toBeGreaterThan(0);
+    expect(hook().frame?.cells.length).toBeGreaterThan(0);
   });
 
   it('drops frames that arrive before config', () => {
@@ -105,7 +105,7 @@ describe('useHeatmap frame gating', () => {
       state_version: 'state_v1',
       cells: [[5, 5, 0.9]],
     });
-    expect(hook().geojson.features).toHaveLength(0);
+    expect(hook().frame).toBeNull();
   });
 
   it('survives a malformed payload instead of throwing out of the listener', () => {
@@ -118,7 +118,7 @@ describe('useHeatmap frame gating', () => {
       state_version: 'state_v2',
       cells: [[5, 5, 0.9]],
     });
-    expect(hook().geojson.features.length).toBeGreaterThan(0);
+    expect(hook().frame?.cells.length).toBeGreaterThan(0);
   });
 
   it('keeps rendering after a backend restart resets state_version', async () => {
@@ -182,7 +182,7 @@ describe('useHeatmap frame gating', () => {
       state_version: 'state_v9',
       cells: [[2, 2, 0.7]],
     });
-    expect(hook().geojson.features.length).toBeGreaterThan(0);
+    expect(hook().frame?.cells.length).toBeGreaterThan(0);
   });
 
   it('lifts the scenario gate when the request fails', async () => {
@@ -197,6 +197,25 @@ describe('useHeatmap frame gating', () => {
     await act(async () => {
       await expect(hook().setScenario('line-1-2')).rejects.toThrow();
     });
+    expect(hook().diagnostics.pendingScenarioId).toBeNull();
+  });
+
+  it('ignores a scenario response from before a configuration reset', async () => {
+    render(<Probe />);
+    currentSource().emit('config', config);
+    let resolveResponse: (response: unknown) => void = () => {};
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockImplementation(() => new Promise(resolve => { resolveResponse = resolve; }));
+    let pending: Promise<void>;
+    act(() => { pending = hook().setScenario('line-1-2'); });
+    currentSource().emit('config', config);
+    await act(async () => {
+      resolveResponse({ ok: true, status: 200, json: async () => ({
+        scenario_id: 'line-1-2',
+        frame: { timestamp: 1, state_version: 'state_v40', cells: [[1, 1, 0.5]] },
+      }) });
+      await pending;
+    });
+    expect(hook().frame).toBeNull();
     expect(hook().diagnostics.pendingScenarioId).toBeNull();
   });
 
@@ -221,24 +240,25 @@ describe('useHeatmap frame gating', () => {
   });
 });
 
-describe('useHeatmap geometry gating', () => {
-  it('skips geometry while the layer is hidden, then catches up when shown', () => {
-    const { rerender } = render(<Probe renderGeometry={false} />);
+describe('useHeatmap reset handling', () => {
+  it('clears accepted frames on clear and configuration replacement', () => {
+    render(<Probe />);
     const source = currentSource();
     source.emit('config', config);
-    source.emit('frame', {
-      timestamp: 1,
-      state_version: 'state_v1',
-      cells: [[5, 5, 0.9]],
-    });
+    source.emit('frame', { timestamp: 1, cells: [[5, 5, 0.9]] });
+    expect(hook().frame).not.toBeNull();
+    source.emit('clear');
+    expect(hook().frame).toBeNull();
+    source.emit('frame', { timestamp: 2, cells: [[5, 5, 0.9]] });
+    source.emit('config', config);
+    expect(hook().frame).toBeNull();
+  });
 
-    expect(hook().geojson.features).toHaveLength(0);
-    // The frame itself was still accounted for.
-    expect(hook().diagnostics.lastFrameCellCount).toBe(1);
-
-    act(() => {
-      rerender(<Probe renderGeometry />);
-    });
-    expect(hook().geojson.features.length).toBeGreaterThan(0);
+  it('clears accepted frames on session reset', () => {
+    render(<Probe />);
+    currentSource().emit('config', config);
+    currentSource().emit('frame', { timestamp: 1, cells: [[5, 5, 0.9]] });
+    act(() => window.dispatchEvent(new Event('simulation-reset')));
+    expect(hook().frame).toBeNull();
   });
 });

@@ -31,3 +31,5 @@ The long documents in `data_processing/` named `ARCHITECTURE.md`, `DEMAND_PIPELI
 - [October 2026 sessions, model metrics, service data, tiles, and tests](implementation-2026-10.md)
 
 - [250 m demand grid and tooltip-only hover](grid-resolution.md)
+
+- [Continuous heatmap rendering and browser comparison](frontend-heatmap.md)

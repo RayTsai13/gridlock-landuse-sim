@@ -1,147 +1,61 @@
-# October 2026 integration update
+# Frontend heatmap
 
-Initialize `POST /api/session` before mounting the consumer. Scenario events carry the confirmed network; do not post a default scenario on mount. Tooltip metrics come from `cell_metrics`, not interpolated display density. See [the current session and frame additions](implementation-2026-10.md).
+The simulation streams modeled demand on a 112×70 grid (~250 m cells). The frontend renders a continuous density field; it does not draw colored circles or increase the model's spatial accuracy. See [the wire contract](heatmap-api-contract.md) and [grid calibration](grid-resolution.md).
 
-# Frontend Heatmap Implementation
+## Data flow
 
-How the frontend consumes the heatmap data stream and renders it on the map.
+1. Initialize the private session before mounting the SSE consumer.
+2. `useHeatmap` accepts configuration, scenario, playback, and frame events, retaining the latest accepted raw frame. Frames before configuration, during a pending scenario switch, or below the accepted state-version floor are discarded.
+3. A visible `RasterHeatmap` sends accepted cells to a module Web Worker. Configuration and the building mask are sent once per worker lifetime.
+4. The worker samples the grid at two samples per cell axis (~125 m), using the existing bilinear interpolation and mean-normalized building-mass shaping. Missing samples are zero; incompatible masks are ignored.
+5. A separable Gaussian (80 m standard deviation, truncated at three standard deviations) smooths scalar density before coloring. This intentionally softens block-scale mask discontinuities without replacing the backend demand model.
+6. The worker interpolates onto eight pixels per cell axis: 560×896 (~31 m visual spacing) in production. Pixel rows use inverse Web Mercator latitude, matching the map's projected ground plane.
+7. A fixed palette lookup colors each pixel. Density never renormalizes to the current frame, viewport, or zoom. The palette's transparent low-density tail and overall opacity of 0.82 are retained.
+8. A MapLibre canvas source and raster layer display the result with linear sampling and zero raster fade. The existing water-polygon layer clips the shoreline; transit layers remain above it.
 
-See [heatmap-api-contract.md](./heatmap-api-contract.md) for the full wire protocol.
-See [seattle-map-architecture.md](./seattle-map-architecture.md) for the cached Seattle building layer that sits underneath the heatmap.
+The raster is bounded to 2048 pixels per axis. Its resolution is visual interpolation only: tooltip totals and the demand index still come from the original cell, not a raster pixel. No API, backend grid, schedule, capacity, or population changes accompany this renderer.
 
----
+## Scheduling and lifecycle
 
-## SSE Connection Lifecycle
+There is at most one active worker render and one replaceable pending frame. Superseded results are dropped. Configuration or mask replacement terminates the old worker and regenerates from the latest accepted frame. Frame clearing and scenario/session resets clear the canvas and invalidate outstanding work. Late scenario HTTP responses from a previous configuration/session are ignored.
 
-1. On app mount, open an `EventSource` to the same-origin path `/api/heatmap/stream`
-   (`src/heatmap/stream.ts`). In dev, Vite proxies `/api` to `http://localhost:8000`;
-   in the container, nginx proxies it to `http://backend:8000`. No absolute API host is
-   ever baked into the bundle.
-2. On `config` event: store the grid parameters (bounds, rows, cols). Cell centroids are derived from these using the formulas in the API contract. Frames arriving before a `config` event are discarded.
-3. On `frame` event: convert the sparse cell array into GeoJSON and update the map source.
-4. On `clear` event: set the map source to an empty FeatureCollection.
-5. On component unmount: close the EventSource.
+Hiding the heatmap unmounts the renderer, terminates its worker, and removes map resources. The stream retains the latest raw frame for showing it again. Style reloads recreate the canvas source and layer.
 
-Reconnection is automatic (built-in `EventSource` behavior). A new `config` event on
-reconnect re-initializes the grid idempotently **and resets the frame gates**: the
-`state_version` floor and any in-flight scenario gate are cleared. This matters because a
-restarted backend counts `state_version` from zero again -- without the reset every later
-frame would sit below the floor and be dropped forever, freezing the map while the
-connection still reported itself as open.
+Canvas animation is disabled. After a changed canvas becomes visible, a play/pause pair uploads it once and requests a repaint; ordinary idle or pan frames do not continually upload textures. An offscreen pending update is retained until the source becomes visible. Worker failures clear stale imagery and display a retry message; toggling the layer recreates the worker.
 
-After three consecutive SSE errors the hook reports `connection: 'failed'`, and the
-loading screen offers a retry rather than spinning indefinitely.
+## Modules and diagnostics
 
-The stream frame is already the composed display state. The frontend should not add scenario deltas to baseline values for the primary heatmap layer. It should render the `cells` array exactly as the backend emits it.
+- `stream.ts`: session-aware SSE, raw frames, scenario/playback actions, and state gates.
+- `grid.ts`: grid types and shared sparse density sampling; GeoJSON conversion remains a comparison/test utility, not the runtime renderer.
+- `raster.ts` / `raster.worker.ts`: scalar smoothing, Mercator sampling, palette, and worker transport.
+- `rasterQueue.ts` / `RasterHeatmap.tsx`: bounded scheduling and canvas/map lifecycle.
+- `layer.ts`: raster opacity/resampling/fade.
+- `useDemandInspection.ts`: exact cell inspection, independent of raster pixels.
 
----
+Open `?debugHeatmap` for grid/frame diagnostics plus raster dimensions and last worker generation duration. That duration excludes worker dispatch, main-thread canvas copying, and GPU upload.
 
-## Grid-to-GeoJSON Conversion
+## Validation
 
-Each frame arrives as metadata plus a sparse array of `[row, col, density]` tuples. `frameToGeoJSON` rasterizes them into a `rows x cols` buffer, then **bilinearly upsamples 3x3 per cell** and emits a GeoJSON `FeatureCollection` of **Point** features — roughly 9x the number of active cells.
+Run `npm test`, `npm run lint`, `npm run build`, and `npm run test:e2e`. Numerical tests cover smoothing, fixed colors, orientation, mask fallback, and transparent empty frames. Lifecycle tests cover stale jobs, resets, mask/config changes, hide/show, resource disposal, and style recreation.
 
-Only cells within one step of a non-zero value are visited, since a sample reads its
-8-neighbourhood: cost is proportional to the **active area**, not to the grid size. The
-conversion is also skipped entirely while the heatmap layer is hidden (`renderGeometry`),
-and the last raw frame is kept so re-enabling is instant:
+`scripts/profile-map.mjs` measures worker generation/round-trip durations, hover latency, pan frame intervals, and page heap; it captures screenshots at multiple views. Set `PROFILE_RENDERER=circles` to profile an old checkout, and `PROFILE_REAL_BASEMAP=1` for shoreline visual checks. Worker and GPU memory are not included in the page heap measurement. Fixture-basemap timing is not production FPS.
 
-```
-Frame input:
-  {
-    "timestamp": ...,
-    "state_version": "state_v4",
-    "sim_time": { "day_of_week": 0, "time_bin": 510, "minute_of_week": 510 },
-    "cells": [[12, 34, 0.82], [13, 34, 0.65]]
-  }
+## Local comparison (2026-10-15)
 
-GeoJSON output:
-  {
-    "type": "FeatureCollection",
-    "features": [
-      {
-        "type": "Feature",
-        "geometry": { "type": "Point", "coordinates": [<lon>, <lat>] },
-        "properties": { "density": 0.82 }
-      },
-      {
-        "type": "Feature",
-        "geometry": { "type": "Point", "coordinates": [<lon>, <lat>] },
-        "properties": { "density": 0.65 }
-      }
-    ]
-  }
-```
+Baseline: deployed commit `f015cb1`, with the same 250 m grid. Both runs use Chromium 156, a 1280×800 viewport, a paused Monday-noon frame, a deterministic empty basemap, and a page CPU throttle of 2×.
 
-Both `state_version` and `sim_time` are load-bearing. `state_version` drives a frame-dropping gate that suppresses stale frames after a scenario switch, and `sim_time` feeds the time dial and the train interpolator.
+| Measurement | Circles | Continuous raster |
+| --- | ---: | ---: |
+| Preparation median / p95 | 0.9 / 1.5 ms, main thread | 4.5 / 4.7 ms, worker |
+| Worker round trip p95 | n/a | 5.6 ms |
+| Hover DOM-update p95 | 10.1 ms | 9.6 ms |
+| Pan frame interval p95 | 50.1 ms | 50.0 ms |
+| Settled startup page heap | 19.17 MB | 17.30 MB |
 
----
+The raster passes the 100 ms generation target and 20% hover/pan regression limits in this run. No main-thread long tasks were observed during the settled generation benchmark. This does not assert that startup or every map interaction is free of long tasks. Worker CPU-throttle equivalence is not independently verified. The old conversion timing excludes GeoJSON source processing; raster timing excludes canvas copying/GPU upload, so preparation timings are not total-render-cost comparisons.
 
-## MapLibre Density Layer
+The real Carto comparison also showed no hover/pan regression: hover p95 9.8 → 9.7 ms, pan interval p95 116.7 → 100.0 ms. It did observe 93–99 ms main-thread tasks during the raster measurement window. Those timings include concurrent basemap activity and do not isolate canvas/GPU upload; a blanket 50 ms end-to-end map-task guarantee is **not** established. These software-rendered browser results are not hardware-GPU production frame rates.
 
-The GeoJSON point source feeds a blurred MapLibre `circle` layer. Each point's color is mapped directly from its raw `density` property, so the same density value keeps the same color at every zoom level.
+Raw measurements: [continuous-heatmap-performance.json](continuous-heatmap-performance.json). Screenshots and traces are local ignored artifacts under `test-results/profile-circles/`, `test-results/profile-raster/`, and `test-results/profile-raster-real/`. Set `PROFILE_VISUAL_SWEEP=1` for additional regional, residential, and crowd-drop screenshots.
 
-Key layer properties:
-
-| Property          | Value                                      | Purpose                                             |
-|-------------------|--------------------------------------------|-----------------------------------------------------|
-| `circle-color`    | Color ramp from raw `density`              | Keeps color stable across zoom levels               |
-| `circle-radius`   | Interpolated by zoom                       | Blur footprint grows/shrinks with zoom              |
-| `circle-blur`     | Constant blur                              | Keeps a soft heatmap-like visual                    |
-| `circle-opacity`  | Constant opacity                           | Semi-transparent so buildings show through          |
-| `circle-sort-key` | `["get", "density"]`                       | Draws hotter samples above cooler samples           |
-
-The density layer is placed **above** the building fill/extrusion layers in the map's layer stack so density is visible over the Seattle building footprints.
-
----
-
-## Data Flow Summary
-
-```
-Baseline components + scenario state
-    │
-    │  Backend frame composer
-    ▼
-Python SSE server
-    │
-    │  SSE frame: { timestamp, state_version, sim_time, cells: [[row, col, density], ...] }
-    ▼
-EventSource listener
-    │
-    │  Sparse cells + precomputed centroid lookup
-    ▼
-Grid-to-GeoJSON conversion
-    │
-    │  FeatureCollection of Points with density property
-    ▼
-MapLibre GeoJSON source (react-map-gl <Source>)
-    │
-    ▼
-MapLibre heatmap layer (react-map-gl <Layer>)
-```
-
----
-
-## Scenario State Boundary
-
-Scenario state belongs behind the stream, not inside the MapLibre renderer.
-
-When the user deploys a build-out, the frontend calls `POST /api/scenario` with the scenario id plus the active stops and lines. The backend rebuilds its transit capacity, bumps `state_version`, and returns a freshly composed frame; the SSE stream then continues from the new state. The frontend suppresses stream frames until that response (or a matching `scenario` event) confirms the switch.
-
-For the heatmap layer, the frontend continues doing the same work:
-
-```text
-receive frame -> convert cells to GeoJSON -> update MapLibre source
-```
-
-`state_version` and `sim_time` are required: see the note on the frame gate above.
-
----
-
-## Module Structure
-
-| Module              | Responsibility                                                        |
-|---------------------|-----------------------------------------------------------------------|
-| `src/heatmap/grid.ts`   | Grid config types, centroid math, 3x3 upsampling, frame-to-GeoJSON conversion |
-| `src/heatmap/stream.ts` | EventSource connection, event parsing, frame gating, lifecycle management |
-| `src/heatmap/layer.ts`  | MapLibre heatmap layer style definition                                |
-| `src/App.tsx`            | Wires stream → grid → Source/Layer into the existing Seattle map      |
+No commit or deployment is part of this change. Release through the existing verified-SHA CI/deploy workflow when authorized; rollback uses the previous frontend image. No data migration or mask regeneration is required.

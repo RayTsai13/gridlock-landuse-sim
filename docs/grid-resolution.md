@@ -1,5 +1,7 @@
 # 250 m demand grid and tooltip-only hover
 
+This records the grid-resolution release. Its circle-renderer measurements are historical; see [the continuous raster renderer](frontend-heatmap.md) for current rendering and performance.
+
 The real backend now defaults to `seattle_heatmap_grid_250m.geojson`: 112 rows ×
 70 columns (7,840 cells), with the same extent as the previous 56×35 runtime
 grid. The original coarse GeoJSON remains regeneration input. This is finer

@@ -11,7 +11,7 @@ import { useEffect, useState } from 'react';
  * keeps heat off Elliott Bay and out of Discovery Park.
  *
  * Row-major, row 0 is the north edge -- the same convention as the SSE frame
- * and `frameToGeoJSON`.
+ * and the scalar raster field.
  */
 export type BuiltMass = {
   bounds: Bounds;
@@ -47,7 +47,7 @@ export function parseBuiltMass(payload: BuiltMassPayload): BuiltMass {
  * Fetch the built-mass field once.
  *
  * Returns `null` until it arrives, and stays `null` if the fetch fails --
- * `frameToGeoJSON` renders unshaped in that case rather than showing nothing.
+ * The renderer operates unshaped in that case rather than showing nothing.
  */
 export function useBuiltMass(): BuiltMass | null {
   const [builtMass, setBuiltMass] = useState<BuiltMass | null>(null);

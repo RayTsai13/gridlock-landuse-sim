@@ -62,22 +62,45 @@ try {
     await fetch('/api/playback', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ is_playing: false }) });
     await fetch('/api/playback/seek', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ day_of_week: 0, time_bin: 720 }) });
   });
-  const processing = await page.evaluate(async () => {
-    const { frameToGeoJSON } = await import('/src/heatmap/grid.ts');
+  await page.waitForTimeout(2500);
+  const processing = await page.evaluate(async (renderer) => {
+    const worker = renderer === 'raster' ? new (await import('/src/heatmap/raster.worker.ts?worker')).default() : null;
+    const frameToGeoJSON = worker ? null : (await import('/src/heatmap/grid.ts')).frameToGeoJSON;
     const mask = await (await fetch('/seattle/seattle-built-mass.json')).json();
     mask.weights = Float32Array.from(mask.weights);
     const response = await fetch('/api/scenario', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scenario_id: 'line-1' }) });
     const { frame } = await response.json();
     const durations = [];
+    const roundTrips = [];
+    const longTasks = [];
+    const observer = new PerformanceObserver(list => longTasks.push(...list.getEntries().map(entry => entry.duration)));
+    observer.observe({ type: 'longtask' });
+    if (worker) worker.postMessage({ type: 'init', config: mask, mask });
     let points = 0;
+    let dimensions = null;
     for (let iteration = 0; iteration < 60; iteration++) {
       const started = performance.now();
-      points = frameToGeoJSON(frame.cells, mask, mask).features.length;
-      if (iteration >= 10) durations.push(performance.now() - started);
+      if (worker) {
+        const result = await new Promise(resolve => {
+          worker.onmessage = event => resolve(event.data);
+          worker.postMessage({ type: 'render', id: iteration, cells: frame.cells });
+        });
+        dimensions = [result.width, result.height];
+        if (iteration >= 10) {
+          durations.push(result.generationMs);
+          roundTrips.push(performance.now() - started);
+        }
+      } else {
+        points = frameToGeoJSON(frame.cells, mask, mask).features.length;
+        if (iteration >= 10) durations.push(performance.now() - started);
+      }
     }
     durations.sort((left, right) => left - right);
-    return { medianMs: durations[25], p95Ms: durations[47], points };
-  });
+    roundTrips.sort((left, right) => left - right);
+    worker?.terminate();
+    observer.disconnect();
+    return { renderer, medianMs: durations[25], p95Ms: durations[47], roundTripP95Ms: roundTrips[47], points, dimensions, mainThreadLongTasks: longTasks };
+  }, process.env.PROFILE_RENDERER ?? 'raster');
   await page.waitForTimeout(2500);
   await page.evaluate(() => {
     window.hoverSamples = [];
@@ -99,7 +122,20 @@ try {
   hoverTimes.sort((left, right) => left - right);
   await sample('startup');
   await page.mouse.move(640, 400);
+  await page.evaluate(() => {
+    window.panIntervals = [];
+    window.panProfiling = true;
+    let previous;
+    function tick(now) {
+      if (previous !== undefined) window.panIntervals.push(now - previous);
+      previous = now;
+      if (window.panProfiling) requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+  });
   await page.mouse.down(); await page.mouse.move(1000, 180, { steps: 30 }); await page.mouse.up();
+  const panIntervals = await page.evaluate(() => { window.panProfiling = false; return window.panIntervals; });
+  panIntervals.sort((left, right) => left - right);
   await sample('pan-west');
   await page.mouse.wheel(0, 1600);
   await sample('citywide');
@@ -107,10 +143,26 @@ try {
   await page.mouse.move(1000, 180);
   await page.mouse.down(); await page.mouse.move(640, 400, { steps: 30 }); await page.mouse.up();
   await sample('return');
-  await page.getByTitle('Switch to Top-Down View').click();
+  const topDown = page.getByTitle('Switch to Top-Down View');
+  if (await topDown.count()) await topDown.click();
   await sample('top-down');
+  if (process.env.PROFILE_VISUAL_SWEEP) {
+    for (let count = 0; count < 4; count++) await page.getByRole('button', { name: 'Zoom out', exact: true }).click();
+    await sample('regional');
+    for (let count = 0; count < 2; count++) await page.getByRole('button', { name: 'Zoom in', exact: true }).click();
+    await page.waitForTimeout(1000);
+    await page.mouse.move(640, 300);
+    await page.mouse.down(); await page.mouse.move(250, 700, { steps: 30 }); await page.mouse.up();
+    await sample('residential');
+    const crowd = await page.locator('.crowd-draggable-btn').boundingBox();
+    const placement = page.waitForResponse(response => response.url().endsWith('/api/people/batch') && response.status() === 201);
+    await page.mouse.move(crowd.x + crowd.width / 2, crowd.y + crowd.height / 2);
+    await page.mouse.down(); await page.mouse.move(640, 400, { steps: 15 }); await page.mouse.up();
+    await placement;
+    await sample('crowd-drop');
+  }
   const report = { label, browser: browser.version(), viewport: '1280x800', cpuThrottle: 2, downloadBytesPerSecond: 2_500_000,
-    processing, hoverP95Ms: hoverTimes[Math.floor(hoverTimes.length * 0.95)], buildingBytesMeaning: 'decoded response bytes in development; not compressed wire bytes', basemap: process.env.PROFILE_REAL_BASEMAP ? 'Carto Positron' : 'deterministic empty fixture', build: 'development', readyMs, samples };
+    processing, panFrameP95Ms: panIntervals[Math.floor(panIntervals.length * 0.95)], hoverP95Ms: hoverTimes[Math.floor(hoverTimes.length * 0.95)], buildingBytesMeaning: 'decoded response bytes in development; not compressed wire bytes', basemap: process.env.PROFILE_REAL_BASEMAP ? 'Carto Positron' : 'deterministic empty fixture', build: 'development', readyMs, samples };
   await writeFile(`${output}/report.json`, JSON.stringify(report, null, 2));
   await context.tracing.stop({ path: `${output}/trace.zip` });
   console.log(JSON.stringify(report));

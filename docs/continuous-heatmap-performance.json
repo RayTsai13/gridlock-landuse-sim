@@ -1,0 +1,319 @@
+{
+  "baselineCommit": "f015cb16793edcbf3163a3fc888c7ac47afd3370",
+  "date": "2026-10-15",
+  "notes": [
+    "Development build and empty deterministic basemap; not production FPS.",
+    "Worker generation and round-trip timings exclude canvas/GPU upload.",
+    "Page heap excludes worker and GPU allocations.",
+    "2x CDP CPU throttle applied to page; worker throttle equivalence is not independently verified.",
+    "No main-thread long tasks observed during the settled generation benchmark; startup is excluded.",
+    "Real-basemap raster run observed 93–99 ms main-thread tasks during the sampling window; these are not isolated to raster generation. The 50 ms end-to-end map-task target is not established by this measurement."
+  ],
+  "circles": {
+    "label": "circles",
+    "browser": "156.0.8078.4",
+    "viewport": "1280x800",
+    "cpuThrottle": 2,
+    "downloadBytesPerSecond": 2500000,
+    "processing": {
+      "renderer": "circles",
+      "medianMs": 0.9000000059604645,
+      "p95Ms": 1.5,
+      "points": 7960,
+      "dimensions": null,
+      "mainThreadLongTasks": []
+    },
+    "panFrameP95Ms": 50.10000000000218,
+    "hoverP95Ms": 10.099999994039536,
+    "buildingBytesMeaning": "decoded response bytes in development; not compressed wire bytes",
+    "basemap": "deterministic empty fixture",
+    "build": "development",
+    "readyMs": 2809,
+    "samples": [
+      {
+        "stage": "startup",
+        "buildingBytes": 323479,
+        "metrics": {
+          "LayoutDuration": 0.154961,
+          "RecalcStyleDuration": 0.12536,
+          "TaskDuration": 5.573385,
+          "JSHeapUsedSize": 19174980
+        }
+      },
+      {
+        "stage": "pan-west",
+        "buildingBytes": 334890,
+        "metrics": {
+          "LayoutDuration": 0.187722,
+          "RecalcStyleDuration": 0.159477,
+          "TaskDuration": 8.598909,
+          "JSHeapUsedSize": 19941508
+        }
+      },
+      {
+        "stage": "citywide",
+        "buildingBytes": 1209524,
+        "metrics": {
+          "LayoutDuration": 0.205173,
+          "RecalcStyleDuration": 0.176548,
+          "TaskDuration": 9.406575,
+          "JSHeapUsedSize": 21116644
+        }
+      },
+      {
+        "stage": "return",
+        "buildingBytes": 1209524,
+        "metrics": {
+          "LayoutDuration": 0.24319,
+          "RecalcStyleDuration": 0.215838,
+          "TaskDuration": 12.982187,
+          "JSHeapUsedSize": 21338468
+        }
+      },
+      {
+        "stage": "top-down",
+        "buildingBytes": 1291016,
+        "metrics": {
+          "LayoutDuration": 0.254049,
+          "RecalcStyleDuration": 0.230305,
+          "TaskDuration": 14.916993,
+          "JSHeapUsedSize": 21598984
+        }
+      }
+    ]
+  },
+  "raster": {
+    "label": "raster",
+    "browser": "156.0.8078.4",
+    "viewport": "1280x800",
+    "cpuThrottle": 2,
+    "downloadBytesPerSecond": 2500000,
+    "processing": {
+      "renderer": "raster",
+      "medianMs": 4.5,
+      "p95Ms": 4.700000017881393,
+      "roundTripP95Ms": 5.600000023841858,
+      "points": 0,
+      "dimensions": [
+        560,
+        896
+      ],
+      "mainThreadLongTasks": []
+    },
+    "panFrameP95Ms": 50,
+    "hoverP95Ms": 9.599999994039536,
+    "buildingBytesMeaning": "decoded response bytes in development; not compressed wire bytes",
+    "basemap": "deterministic empty fixture",
+    "build": "development",
+    "readyMs": 2933,
+    "samples": [
+      {
+        "stage": "startup",
+        "buildingBytes": 323479,
+        "metrics": {
+          "LayoutDuration": 0.139335,
+          "RecalcStyleDuration": 0.113447,
+          "TaskDuration": 5.76532,
+          "JSHeapUsedSize": 17304020
+        }
+      },
+      {
+        "stage": "pan-west",
+        "buildingBytes": 334890,
+        "metrics": {
+          "LayoutDuration": 0.177797,
+          "RecalcStyleDuration": 0.152636,
+          "TaskDuration": 8.400816,
+          "JSHeapUsedSize": 17966684
+        }
+      },
+      {
+        "stage": "citywide",
+        "buildingBytes": 1264404,
+        "metrics": {
+          "LayoutDuration": 0.197237,
+          "RecalcStyleDuration": 0.170495,
+          "TaskDuration": 9.198428,
+          "JSHeapUsedSize": 18772704
+        }
+      },
+      {
+        "stage": "return",
+        "buildingBytes": 1268477,
+        "metrics": {
+          "LayoutDuration": 0.233405,
+          "RecalcStyleDuration": 0.211882,
+          "TaskDuration": 12.569536,
+          "JSHeapUsedSize": 19080864
+        }
+      },
+      {
+        "stage": "top-down",
+        "buildingBytes": 1349969,
+        "metrics": {
+          "LayoutDuration": 0.249858,
+          "RecalcStyleDuration": 0.23262,
+          "TaskDuration": 14.455469,
+          "JSHeapUsedSize": 19194436
+        }
+      }
+    ]
+  },
+  "circlesReal": {
+    "label": "circles-real",
+    "browser": "156.0.8078.4",
+    "viewport": "1280x800",
+    "cpuThrottle": 2,
+    "downloadBytesPerSecond": 2500000,
+    "processing": {
+      "renderer": "circles",
+      "medianMs": 0.800000011920929,
+      "p95Ms": 1.9000000059604645,
+      "points": 7960,
+      "dimensions": null,
+      "mainThreadLongTasks": []
+    },
+    "panFrameP95Ms": 116.70000000000073,
+    "hoverP95Ms": 9.800000011920929,
+    "buildingBytesMeaning": "decoded response bytes in development; not compressed wire bytes",
+    "basemap": "Carto Positron",
+    "build": "development",
+    "readyMs": 4590,
+    "samples": [
+      {
+        "stage": "startup",
+        "buildingBytes": 323479,
+        "metrics": {
+          "LayoutDuration": 0.144491,
+          "RecalcStyleDuration": 0.115068,
+          "TaskDuration": 8.271149,
+          "JSHeapUsedSize": 22611696
+        }
+      },
+      {
+        "stage": "pan-west",
+        "buildingBytes": 334890,
+        "metrics": {
+          "LayoutDuration": 0.170361,
+          "RecalcStyleDuration": 0.147166,
+          "TaskDuration": 13.327178,
+          "JSHeapUsedSize": 23178692
+        }
+      },
+      {
+        "stage": "citywide",
+        "buildingBytes": 1209524,
+        "metrics": {
+          "LayoutDuration": 0.183959,
+          "RecalcStyleDuration": 0.163003,
+          "TaskDuration": 14.275938,
+          "JSHeapUsedSize": 25575612
+        }
+      },
+      {
+        "stage": "return",
+        "buildingBytes": 1209524,
+        "metrics": {
+          "LayoutDuration": 0.211003,
+          "RecalcStyleDuration": 0.192056,
+          "TaskDuration": 18.96731,
+          "JSHeapUsedSize": 26079400
+        }
+      },
+      {
+        "stage": "top-down",
+        "buildingBytes": 1291016,
+        "metrics": {
+          "LayoutDuration": 0.218657,
+          "RecalcStyleDuration": 0.20168,
+          "TaskDuration": 21.248613,
+          "JSHeapUsedSize": 26311128
+        }
+      }
+    ]
+  },
+  "rasterReal": {
+    "label": "raster-real",
+    "browser": "156.0.8078.4",
+    "viewport": "1280x800",
+    "cpuThrottle": 2,
+    "downloadBytesPerSecond": 2500000,
+    "processing": {
+      "renderer": "raster",
+      "medianMs": 4.5,
+      "p95Ms": 4.700000017881393,
+      "roundTripP95Ms": 6.0999999940395355,
+      "points": 0,
+      "dimensions": [
+        560,
+        896
+      ],
+      "mainThreadLongTasks": [
+        99,
+        98,
+        96,
+        95,
+        93,
+        96
+      ]
+    },
+    "panFrameP95Ms": 100,
+    "hoverP95Ms": 9.700000017881393,
+    "buildingBytesMeaning": "decoded response bytes in development; not compressed wire bytes",
+    "basemap": "Carto Positron",
+    "build": "development",
+    "readyMs": 4411,
+    "samples": [
+      {
+        "stage": "startup",
+        "buildingBytes": 323479,
+        "metrics": {
+          "LayoutDuration": 0.145657,
+          "RecalcStyleDuration": 0.115039,
+          "TaskDuration": 8.659683,
+          "JSHeapUsedSize": 20712228
+        }
+      },
+      {
+        "stage": "pan-west",
+        "buildingBytes": 334890,
+        "metrics": {
+          "LayoutDuration": 0.176733,
+          "RecalcStyleDuration": 0.149452,
+          "TaskDuration": 12.618689,
+          "JSHeapUsedSize": 21149928
+        }
+      },
+      {
+        "stage": "citywide",
+        "buildingBytes": 1209524,
+        "metrics": {
+          "LayoutDuration": 0.191589,
+          "RecalcStyleDuration": 0.164183,
+          "TaskDuration": 13.781039,
+          "JSHeapUsedSize": 23149112
+        }
+      },
+      {
+        "stage": "return",
+        "buildingBytes": 1357207,
+        "metrics": {
+          "LayoutDuration": 0.222062,
+          "RecalcStyleDuration": 0.194735,
+          "TaskDuration": 18.33231,
+          "JSHeapUsedSize": 23763828
+        }
+      },
+      {
+        "stage": "top-down",
+        "buildingBytes": 1438699,
+        "metrics": {
+          "LayoutDuration": 0.22829,
+          "RecalcStyleDuration": 0.205476,
+          "TaskDuration": 20.522165,
+          "JSHeapUsedSize": 24002004
+        }
+      }
+    ]
+  }
+}

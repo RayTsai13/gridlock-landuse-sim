@@ -43,7 +43,7 @@ export type SimTime = {
   minute_of_week: number;
 };
 
-const HEATMAP_SUBDIVISIONS = 2;
+export const HEATMAP_SUBDIVISIONS = 2;
 
 // Above the backend's own DISPLAY_THRESHOLD, so bilinear interpolation cannot
 // resurrect cells the server deliberately culled. Set lower and the tail of
@@ -88,15 +88,13 @@ function shapingFor(mask: BuiltMass) {
   return shaping;
 }
 
-export function frameToGeoJSON(
+export function visitFrameSamples(
   cells: CellTuple[],
   config: GridConfig,
-  builtMass?: BuiltMass | null,
-): FeatureCollection<Point> {
+  builtMass: BuiltMass | null | undefined,
+  visit: (row: number, col: number, density: number) => void,
+) {
   const { bounds, rows, cols } = config;
-  const coordinates = coordinatesFor(config);
-  const cellWidth = (bounds.east - bounds.west) / cols;
-  const cellHeight = (bounds.north - bounds.south) / rows;
   const values = new Float32Array(rows * cols);
 
   for (const [row, col, density] of cells) {
@@ -111,7 +109,6 @@ export function frameToGeoJSON(
     (Object.keys(bounds) as (keyof Bounds)[]).every(key => Math.abs(builtMass.bounds[key] - bounds[key]) < 1e-9) ? builtMass : null;
 
   const shaping = mask ? shapingFor(mask) : null;
-  const features: FeatureCollection<Point>['features'] = [];
 
   // Frames are sparse, but every sample of a cell reads its 8-neighbourhood
   // (the subdivision offsets span +/- half a cell), so a cell can only produce
@@ -170,28 +167,26 @@ export function frameToGeoJSON(
 
         if (density <= MIN_RENDER_DENSITY) continue;
 
-        const sampleIndex = index * HEATMAP_SUBDIVISIONS ** 2 + sampleY * HEATMAP_SUBDIVISIONS + sampleX;
-        const position = coordinates[sampleIndex] ??= [
-          bounds.west + (col + x) * cellWidth,
-          bounds.north - (row + y) * cellHeight,
-        ];
-
-        features.push({
-          type: 'Feature' as const,
-          geometry: {
-            type: 'Point' as const,
-            coordinates: position,
-          },
-          properties: { density },
-        });
+        visit(row * HEATMAP_SUBDIVISIONS + sampleY, col * HEATMAP_SUBDIVISIONS + sampleX, density);
       }
     }
   }
+}
 
-  return {
-    type: 'FeatureCollection',
-    features,
-  };
+export function frameToGeoJSON(cells: CellTuple[], config: GridConfig, builtMass?: BuiltMass | null): FeatureCollection<Point> {
+  const coordinates = coordinatesFor(config);
+  const features: FeatureCollection<Point>['features'] = [];
+  const width = config.cols * HEATMAP_SUBDIVISIONS;
+  const height = config.rows * HEATMAP_SUBDIVISIONS;
+  visitFrameSamples(cells, config, builtMass, (row, col, density) => {
+    const index = row * width + col;
+    const position = coordinates[index] ??= [
+      config.bounds.west + (col + 0.5) / width * (config.bounds.east - config.bounds.west),
+      config.bounds.north - (row + 0.5) / height * (config.bounds.north - config.bounds.south),
+    ];
+    features.push({ type: 'Feature', geometry: { type: 'Point', coordinates: position }, properties: { density } });
+  });
+  return { type: 'FeatureCollection', features };
 }
 
 export function emptyGrid(): FeatureCollection<Point> {

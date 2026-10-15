@@ -46,6 +46,8 @@ test('private sessions, shared tabs, refresh and modeled metrics', async ({ brow
 test('building tiles and service assets load without legacy region downloads', async ({ page }) => {
   const requests: string[] = [];
   const tileErrors: string[] = [];
+  const pageErrors: string[] = [];
+  page.on('pageerror', error => pageErrors.push(error.message));
   page.on('request', (request) => requests.push(request.url()));
   page.on('response', (response) => {
     if (response.url().endsWith('.pbf') && response.status() >= 400) tileErrors.push(response.url());
@@ -56,12 +58,17 @@ test('building tiles and service assets load without legacy region downloads', a
   expect(requests.some((url) => /seattle-buildings.*\.geojson/.test(url))).toBe(false);
   expect(tileErrors).toEqual([]);
   await page.getByRole('button', { name: 'Show heatmap', exact: true }).click();
+  await expect(page.locator('.heatmap-debug-panel')).toContainText('raster: 560 × 896');
   await page.mouse.move(640, 400);
   await expect(page.locator('.demand-tooltip')).toContainText('Modeled unmet trips/hour');
   await expect(page.locator('.demand-tooltip')).toContainText('~250 m cell');
   await page.screenshot({ path: 'test-results/demand.png' });
   await page.getByRole('button', { name: 'Hide heatmap', exact: true }).click();
   await expect(page.locator('.demand-tooltip')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Show heatmap', exact: true }).click();
+  await expect.poll(() => requests.filter(url => url.includes('raster.worker')).length).toBeGreaterThan(0);
+  await expect(page.locator('[role=alert]')).toHaveCount(0);
+  expect(pageErrors).toEqual([]);
 });
 
 test('playback and crowd controls send confirmed mutations', async ({ page }) => {

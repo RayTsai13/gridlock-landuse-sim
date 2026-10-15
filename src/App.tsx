@@ -21,7 +21,8 @@ import { useCrowdDrop } from "./heatmap/useCrowdDrop.ts";
 import { useTimeControls } from './heatmap/useTimeControls.ts';
 import { useDemandInspection } from './heatmap/useDemandInspection.ts';
 import { ModelInfoPanel } from './heatmap/ModelInfoPanel.tsx';
-import { HEATMAP_LAYER_ID, heatmapLayer } from "./heatmap/layer.ts";
+import { RasterHeatmap } from "./heatmap/RasterHeatmap.tsx";
+import type { RasterDiagnostics } from "./heatmap/RasterHeatmap.tsx";
 import { useBuiltMass } from "./heatmap/mask.ts";
 import { DEPLOY_STEPS, stopsToGeoJSON, linesToGeoJSON } from "./stops/data.ts";
 import type { TransitStop, TransitLine } from "./stops/data.ts";
@@ -285,7 +286,6 @@ function App() {
   const [isHeatmapVisible, setIsHeatmapVisible] = useState(false);
   const builtMass = useBuiltMass();
   const {
-    geojson: heatmapData,
     frame,
     config,
     scenarioId,
@@ -297,7 +297,8 @@ function App() {
     addPeopleBatch,
     diagnostics: heatmapDiagnostics,
     retryConnection,
-  } = useHeatmap({ renderGeometry: isHeatmapVisible, builtMass });
+  } = useHeatmap();
+  const [rasterDiagnostics, setRasterDiagnostics] = useState<RasterDiagnostics | null>(null);
   const showHeatmapDebug = useMemo(
     () => new URLSearchParams(window.location.search).has("debugHeatmap"),
     [],
@@ -650,13 +651,12 @@ function App() {
   // Interactive layer IDs for click detection
   const interactiveLayerIds = useMemo(
     () => [
-      ...(isHeatmapVisible ? [HEATMAP_LAYER_ID] : []),
       "transit-stops-circle",
       "transit-stops-dot",
       "deploy-pulse-ring",
       "deploy-glow-dot",
     ],
-    [isHeatmapVisible],
+    [],
   );
 
   const handleMapLoad = useCallback(
@@ -863,9 +863,8 @@ function App() {
               beforeId="transit-line-casing"
               paint={{ "fill-color": BASEMAP_WATER_COLOR }}
             />
-            <Source id="heatmap-source" type="geojson" data={heatmapData}>
-              <Layer {...heatmapLayer} beforeId={HEATMAP_WATER_CLIP_LAYER_ID} />
-            </Source>
+            <RasterHeatmap frame={frame} config={config} builtMass={builtMass}
+              beforeId={HEATMAP_WATER_CLIP_LAYER_ID} onDiagnostics={setRasterDiagnostics} />
           </>
         )}
 
@@ -983,6 +982,7 @@ function App() {
         </div>
       )}
 
+      {isHeatmapVisible && rasterDiagnostics?.error && <div className="session-notice" role="alert">{rasterDiagnostics.error}</div>}
       {showHeatmapDebug && (
         <div className="heatmap-debug-panel">
           <strong>Heatmap Debug</strong>
@@ -999,7 +999,7 @@ function App() {
               ? `d${heatmapDiagnostics.simTime.day_of_week} ${formatTime(heatmapDiagnostics.simTime.time_bin)}`
               : "none"}
           </span>
-          <span>features: {heatmapDiagnostics.featureCount}</span>
+          <span>raster: {rasterDiagnostics?.width ?? 0} × {rasterDiagnostics?.height ?? 0} · {rasterDiagnostics?.generationMs.toFixed(1) ?? 0} ms</span>
           <span>cells: {heatmapDiagnostics.lastFrameCellCount}</span>
           <span>
             grid:{" "}

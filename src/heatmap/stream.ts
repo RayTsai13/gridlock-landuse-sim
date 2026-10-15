@@ -1,9 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { FeatureCollection, Point } from 'geojson';
-import { emptyGrid, frameToGeoJSON } from './grid.ts';
 import { ensureSession } from './session.ts';
 import type { GridConfig, Frame } from './grid.ts';
-import type { BuiltMass } from './mask.ts';
 import {
   deleteAllPeople,
   deletePerson,
@@ -31,22 +28,7 @@ function stateVersionNumber(stateVersion?: string): number | null {
   return match ? Number.parseInt(match[1], 10) : null;
 }
 
-export type HeatmapOptions = {
-  /**
-   * Whether anyone is actually displaying the heatmap. Converting a frame to
-   * GeoJSON is the most expensive thing this hook does, so it is skipped while
-   * the layer is hidden; the raw frame is retained so re-enabling is instant.
-   */
-  renderGeometry?: boolean;
-  /**
-   * Built-mass field used to shape each cell's samples onto the blocks that
-   * actually hold buildings. Rendering is unshaped while this is null.
-   */
-  builtMass?: BuiltMass | null;
-};
-
 export type HeatmapApi = {
-  geojson: FeatureCollection<Point>;
   frame: Frame | null;
   config: GridConfig | null;
   network: { stops: ScenarioStop[]; lines: ScenarioLine[] } | null;
@@ -76,19 +58,15 @@ export type HeatmapDiagnostics = {
   confirmedScenarioId: string | null;
   frameCount: number;
   lastFrameCellCount: number;
-  featureCount: number;
   lastFrameAt: number | null;
   config: Pick<GridConfig, 'rows' | 'cols'> | null;
   simTime: PlaybackState['sim_time'] | null;
   lastError: string | null;
 };
 
-export function useHeatmap(options: HeatmapOptions = {}): HeatmapApi {
-  const { renderGeometry = true, builtMass = null } = options;
-
+export function useHeatmap(): HeatmapApi {
   const [frame, setFrame] = useState<Frame | null>(null);
   const [network, setNetwork] = useState<{ stops: ScenarioStop[]; lines: ScenarioLine[] } | null>(null);
-  const [geojson, setGeojson] = useState<FeatureCollection<Point>>(emptyGrid());
   const [scenarioId, setScenarioId] = useState<string | null>(null);
   const [playback, setPlaybackState] = useState<PlaybackState | null>(null);
   const [diagnostics, setDiagnostics] = useState<HeatmapDiagnostics>({
@@ -97,7 +75,6 @@ export function useHeatmap(options: HeatmapOptions = {}): HeatmapApi {
     confirmedScenarioId: null,
     frameCount: 0,
     lastFrameCellCount: 0,
-    featureCount: 0,
     lastFrameAt: null,
     config: null,
     simTime: null,
@@ -109,21 +86,8 @@ export function useHeatmap(options: HeatmapOptions = {}): HeatmapApi {
   // server's `scenario` event confirms the switch by matching this value.
   const pendingScenarioRef = useRef<string | null>(null);
   const consecutiveErrorsRef = useRef(0);
-  // The most recent frame as it arrived, so the heatmap can be re-shown
-  // without waiting for the next tick.
-  const latestFrameRef = useRef<Frame | null>(null);
-  const renderGeometryRef = useRef(renderGeometry);
-  const builtMassRef = useRef(builtMass);
+  const scenarioRequestRef = useRef(0);
   const [retryToken, setRetryToken] = useState(0);
-
-  // The SSE listeners are registered once and must see the current values.
-  useEffect(() => {
-    renderGeometryRef.current = renderGeometry;
-  }, [renderGeometry]);
-
-  useEffect(() => {
-    builtMassRef.current = builtMass;
-  }, [builtMass]);
 
   useEffect(() => {
     const source = new EventSource(STREAM_URL);
@@ -140,9 +104,11 @@ export function useHeatmap(options: HeatmapOptions = {}): HeatmapApi {
       }).catch(() => { recovering = false; });
     };
     const onReset = () => {
-      latestFrameRef.current = null;
+      scenarioRequestRef.current++;
+      configRef.current = null;
+      minimumFrameStateVersionRef.current = null;
+      pendingScenarioRef.current = null;
       setFrame(null);
-      setGeojson(emptyGrid());
       source.close();
       setRetryToken((value) => value + 1);
     };
@@ -174,7 +140,9 @@ export function useHeatmap(options: HeatmapOptions = {}): HeatmapApi {
     source.addEventListener('config', (e: MessageEvent) => {
       const config = parse<GridConfig>(e, 'config');
       if (!config) return;
+      scenarioRequestRef.current++;
       configRef.current = config;
+      setFrame(null);
       // `config` is re-emitted on every (re)connection, which makes it the one
       // reliable signal that the server may be a *different* process than the
       // one these gates were calibrated against. A restarted backend counts
@@ -194,6 +162,7 @@ export function useHeatmap(options: HeatmapOptions = {}): HeatmapApi {
     source.addEventListener('scenario', (e: MessageEvent) => {
       const payload = parse<{ scenario_id: string; stops?: ScenarioStop[]; lines?: ScenarioLine[] }>(e, 'scenario');
       if (!payload) return;
+      setFrame(null);
       setScenarioId(payload.scenario_id);
       if (payload.stops && payload.lines) setNetwork({ stops: payload.stops, lines: payload.lines });
       if (pendingScenarioRef.current === payload.scenario_id) {
@@ -230,35 +199,21 @@ export function useHeatmap(options: HeatmapOptions = {}): HeatmapApi {
       ) {
         return;
       }
-      latestFrameRef.current = frame;
       setFrame(frame);
 
-      let featureCount = 0;
-      if (renderGeometryRef.current) {
-        const nextGeojson = frameToGeoJSON(
-          frame.cells,
-          configRef.current,
-          builtMassRef.current,
-        );
-        featureCount = nextGeojson.features.length;
-        setGeojson(nextGeojson);
-      }
       setDiagnostics((current) => ({
         ...current,
         frameCount: current.frameCount + 1,
         lastFrameCellCount: frame.cells.length,
-        featureCount: renderGeometryRef.current ? featureCount : current.featureCount,
         lastFrameAt: Date.now(),
         simTime: frame.sim_time ?? current.simTime,
       }));
     });
 
     source.addEventListener('clear', () => {
-      latestFrameRef.current = null;
-      setGeojson(emptyGrid());
+      setFrame(null);
       setDiagnostics((current) => ({
         ...current,
-        featureCount: 0,
         lastFrameCellCount: 0,
       }));
     });
@@ -286,22 +241,6 @@ export function useHeatmap(options: HeatmapOptions = {}): HeatmapApi {
     };
   }, [retryToken]);
 
-  // Re-showing the heatmap -- or finishing the built-mass fetch -- converts the
-  // frame we already have, so the layer does not stay empty or unshaped until
-  // the next tick arrives.
-  useEffect(() => {
-    if (!renderGeometry) return;
-    const frame = latestFrameRef.current;
-    const config = configRef.current;
-    if (!frame || !config) return;
-    const nextGeojson = frameToGeoJSON(frame.cells, config, builtMass);
-    setGeojson(nextGeojson);
-    setDiagnostics((current) => ({
-      ...current,
-      featureCount: nextGeojson.features.length,
-    }));
-  }, [renderGeometry, builtMass]);
-
   const retryConnection = useCallback(() => {
     consecutiveErrorsRef.current = 0;
     setDiagnostics((current) => ({
@@ -317,7 +256,9 @@ export function useHeatmap(options: HeatmapOptions = {}): HeatmapApi {
     stops: ScenarioStop[] = [],
     lines: ScenarioLine[] = [],
   ) => {
+    const requestId = ++scenarioRequestRef.current;
     pendingScenarioRef.current = id;
+    setFrame(null);
     setDiagnostics((current) => ({
       ...current,
       pendingScenarioId: id,
@@ -325,6 +266,7 @@ export function useHeatmap(options: HeatmapOptions = {}): HeatmapApi {
     }));
     try {
       const response = await postScenario(id, stops, lines);
+      if (requestId !== scenarioRequestRef.current) return;
       setScenarioId(response.scenario_id);
       if (response.stops && response.lines) setNetwork({ stops: response.stops, lines: response.lines });
       if (response.frame && configRef.current) {
@@ -335,24 +277,18 @@ export function useHeatmap(options: HeatmapOptions = {}): HeatmapApi {
             frameVersion,
           );
         }
-        latestFrameRef.current = response.frame;
         setFrame(response.frame);
-        const nextGeojson = renderGeometryRef.current
-          ? frameToGeoJSON(response.frame.cells, configRef.current, builtMassRef.current)
-          : null;
-        setScenarioId(response.scenario_id);
-        if (nextGeojson) setGeojson(nextGeojson);
         setDiagnostics((current) => ({
           ...current,
           confirmedScenarioId: response.scenario_id,
           frameCount: current.frameCount + 1,
           lastFrameCellCount: response.frame?.cells.length ?? 0,
-          featureCount: nextGeojson ? nextGeojson.features.length : current.featureCount,
           lastFrameAt: Date.now(),
           simTime: response.frame?.sim_time ?? current.simTime,
         }));
       }
     } catch (err) {
+      if (requestId !== scenarioRequestRef.current) return;
       setDiagnostics((current) => ({
         ...current,
         lastError: err instanceof Error ? err.message : 'Failed to post scenario.',
@@ -362,8 +298,10 @@ export function useHeatmap(options: HeatmapOptions = {}): HeatmapApi {
       // Always lift the gate. Leaving it raised -- which happened whenever the
       // response carried no frame, or config had not arrived yet -- drops every
       // subsequent frame and freezes the map.
-      pendingScenarioRef.current = null;
-      setDiagnostics((current) => ({ ...current, pendingScenarioId: null }));
+      if (requestId === scenarioRequestRef.current) {
+        pendingScenarioRef.current = null;
+        setDiagnostics((current) => ({ ...current, pendingScenarioId: null }));
+      }
     }
   }, []);
 
@@ -391,7 +329,6 @@ export function useHeatmap(options: HeatmapOptions = {}): HeatmapApi {
   const clearPeople = useCallback(() => deleteAllPeople(), []);
 
   return {
-    geojson,
     frame,
     config: configRef.current,
     network,
