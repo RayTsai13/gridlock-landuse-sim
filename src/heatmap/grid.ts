@@ -61,20 +61,6 @@ function coordinatesFor(config: GridConfig) {
   const cached = coordinateCache.get(config);
   if (cached) return cached;
   const coordinates: number[][] = [];
-  const width = (config.bounds.east - config.bounds.west) / config.cols;
-  const height = (config.bounds.north - config.bounds.south) / config.rows;
-  for (let row = 0; row < config.rows; row++) {
-    for (let col = 0; col < config.cols; col++) {
-      for (let sampleY = 0; sampleY < HEATMAP_SUBDIVISIONS; sampleY++) {
-        for (let sampleX = 0; sampleX < HEATMAP_SUBDIVISIONS; sampleX++) {
-          coordinates.push([
-            config.bounds.west + (col + (sampleX + 0.5) / HEATMAP_SUBDIVISIONS) * width,
-            config.bounds.north - (row + (sampleY + 0.5) / HEATMAP_SUBDIVISIONS) * height,
-          ]);
-        }
-      }
-    }
-  }
   coordinateCache.set(config, coordinates);
   return coordinates;
 }
@@ -109,6 +95,8 @@ export function frameToGeoJSON(
 ): FeatureCollection<Point> {
   const { bounds, rows, cols } = config;
   const coordinates = coordinatesFor(config);
+  const cellWidth = (bounds.east - bounds.west) / cols;
+  const cellHeight = (bounds.north - bounds.south) / rows;
   const values = new Float32Array(rows * cols);
 
   for (const [row, col, density] of cells) {
@@ -182,11 +170,17 @@ export function frameToGeoJSON(
 
         if (density <= MIN_RENDER_DENSITY) continue;
 
+        const sampleIndex = index * HEATMAP_SUBDIVISIONS ** 2 + sampleY * HEATMAP_SUBDIVISIONS + sampleX;
+        const position = coordinates[sampleIndex] ??= [
+          bounds.west + (col + x) * cellWidth,
+          bounds.north - (row + y) * cellHeight,
+        ];
+
         features.push({
           type: 'Feature' as const,
           geometry: {
             type: 'Point' as const,
-            coordinates: coordinates[index * HEATMAP_SUBDIVISIONS ** 2 + sampleY * HEATMAP_SUBDIVISIONS + sampleX],
+            coordinates: position,
           },
           properties: { density },
         });
